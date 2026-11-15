@@ -25,7 +25,7 @@ export function isIconCandidate(node: SceneNode, config: ScanConfig): boolean {
   if (w < config.minDimension || h < config.minDimension) return false;
   if (w > config.maxDimension || h > config.maxDimension) return false;
 
-  // Aspect ratio check: icons are generally 1:1 square-ish (allow 20% variance)
+  // Aspect ratio check: icons are generally 1:1 square-ish (allow 25% variance)
   const ratio = w / h;
   if (ratio < 0.75 || ratio > 1.33) return false;
 
@@ -72,6 +72,18 @@ function buildHierarchyPath(node: SceneNode): string {
   return parts.join(' / ');
 }
 
+function getTopLevelScreenName(node: SceneNode): string {
+  let curr: BaseNode | null = node;
+  let topScreen = node.name;
+  while (curr && curr.parent && curr.parent.type !== 'PAGE' && curr.parent.type !== 'DOCUMENT') {
+    curr = curr.parent;
+    if ('name' in curr) {
+      topScreen = (curr as SceneNode).name;
+    }
+  }
+  return topScreen;
+}
+
 export function scanForIcons(rootNodes: readonly SceneNode[], pageName: string, config: ScanConfig): DetectedIcon[] {
   const icons: DetectedIcon[] = [];
   const visited = new Set<string>();
@@ -87,6 +99,7 @@ export function scanForIcons(rootNodes: readonly SceneNode[], pageName: string, 
         width: Math.round(node.width),
         height: Math.round(node.height),
         pageName,
+        screenName: getTopLevelScreenName(node),
         parentPath: buildHierarchyPath(node),
         slashPath: node.name.includes('/') ? node.name : '',
         type: node.type,
@@ -108,4 +121,3 @@ export function scanForIcons(rootNodes: readonly SceneNode[], pageName: string, 
 
   return icons;
 }
-

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { DetectedIcon, ExportRequest, ScanConfig } from '../../main/types';
 
 interface Props {
@@ -72,22 +72,15 @@ const ZOOM_CONFIGS: Record<
   },
 };
 
-// Pastel theme palette for instant visual recognition of different groups
-const GROUP_THEMES = [
-  { bg: 'bg-blue-50/50', border: 'border-blue-200/80', badge: 'bg-blue-100 text-blue-800 border-blue-200', dot: 'bg-blue-500' },
-  { bg: 'bg-indigo-50/50', border: 'border-indigo-200/80', badge: 'bg-indigo-100 text-indigo-800 border-indigo-200', dot: 'bg-indigo-500' },
-  { bg: 'bg-emerald-50/50', border: 'border-emerald-200/80', badge: 'bg-emerald-100 text-emerald-800 border-emerald-200', dot: 'bg-emerald-500' },
-  { bg: 'bg-amber-50/50', border: 'border-amber-200/80', badge: 'bg-amber-100 text-amber-800 border-amber-200', dot: 'bg-amber-500' },
-  { bg: 'bg-purple-50/50', border: 'border-purple-200/80', badge: 'bg-purple-100 text-purple-800 border-purple-200', dot: 'bg-purple-500' },
-  { bg: 'bg-rose-50/50', border: 'border-rose-200/80', badge: 'bg-rose-100 text-rose-800 border-rose-200', dot: 'bg-rose-500' },
-  { bg: 'bg-cyan-50/50', border: 'border-cyan-200/80', badge: 'bg-cyan-100 text-cyan-800 border-cyan-200', dot: 'bg-cyan-500' },
+// Pastel terrain tones for organic map territories
+const TERRAIN_THEMES = [
+  { border: 'border-blue-400', bg: 'bg-blue-50/50', hover: 'hover:border-blue-600 hover:bg-blue-50/80', badge: 'bg-blue-100 text-blue-800' },
+  { border: 'border-emerald-400', bg: 'bg-emerald-50/50', hover: 'hover:border-emerald-600 hover:bg-emerald-50/80', badge: 'bg-emerald-100 text-emerald-800' },
+  { border: 'border-violet-400', bg: 'bg-violet-50/50', hover: 'hover:border-violet-600 hover:bg-violet-50/80', badge: 'bg-violet-100 text-violet-800' },
+  { border: 'border-amber-400', bg: 'bg-amber-50/50', hover: 'hover:border-amber-600 hover:bg-amber-50/80', badge: 'bg-amber-100 text-amber-800' },
+  { border: 'border-rose-400', bg: 'bg-rose-50/50', hover: 'hover:border-rose-600 hover:bg-rose-50/80', badge: 'bg-rose-100 text-rose-800' },
+  { border: 'border-cyan-400', bg: 'bg-cyan-50/50', hover: 'hover:border-cyan-600 hover:bg-cyan-50/80', badge: 'bg-cyan-100 text-cyan-800' },
 ];
-
-function getTopSectionName(parentPath: string): string {
-  if (!parentPath) return 'Direct Assets';
-  const parts = parentPath.split('/').map(p => p.trim()).filter(Boolean);
-  return parts[0] || 'Direct Assets';
-}
 
 export const IconExportTab: React.FC<Props> = ({
   icons,
@@ -98,61 +91,59 @@ export const IconExportTab: React.FC<Props> = ({
   onExport,
   onSelectNode,
 }) => {
-  const [scope, setScope] = useState<ScanConfig['scope']>('page');
+  const [scope, setScope] = useState<ScanConfig['scope']>('document'); // Default document for multi-page grouping!
   const [maxDimension, setMaxDimension] = useState<number>(48);
   const [onlyComponents, setOnlyComponents] = useState<boolean>(false);
 
   const [format, setFormat] = useState<ExportRequest['format']>('SVG');
   const [scale, setScale] = useState<number>(1);
-  const [folderMode, setFolderMode] = useState<ExportRequest['folderMode']>('slash');
+  const [folderMode, setFolderMode] = useState<ExportRequest['folderMode']>('hierarchy');
 
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [groupBySections, setGroupBySections] = useState<boolean>(true); // Smart default: Grouped by Page & Frame!
+  const [viewMode, setViewMode] = useState<'map' | 'grid' | 'list'>('map');
   const [zoomLevel, setZoomLevel] = useState<number>(2);
+
+  // Mouse-following cursor tooltip state for Map mode
+  const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(null);
+  const [hoveredCluster, setHoveredCluster] = useState<{
+    pageName: string;
+    screenName: string;
+    count: number;
+  } | null>(null);
 
   // Update selected IDs whenever new icons are scanned
   React.useEffect(() => {
     setSelectedIds(new Set(icons.map(i => i.id)));
   }, [icons]);
 
-  const filteredIcons = useMemo(() => {
+  const filteredIcons = icons.filter(icon => {
     const q = searchQuery.toLowerCase();
-    return icons.filter(
-      icon =>
-        icon.name.toLowerCase().includes(q) ||
-        icon.parentPath.toLowerCase().includes(q) ||
-        icon.slashPath.toLowerCase().includes(q) ||
-        icon.pageName.toLowerCase().includes(q)
+    return (
+      icon.name.toLowerCase().includes(q) ||
+      icon.parentPath.toLowerCase().includes(q) ||
+      icon.slashPath.toLowerCase().includes(q) ||
+      icon.screenName?.toLowerCase().includes(q) ||
+      icon.pageName.toLowerCase().includes(q)
     );
-  }, [icons, searchQuery]);
+  });
 
-  // Group icons by Page, then by Frame/Group Section
-  const groupedData = useMemo(() => {
-    const pageMap = new Map<string, Map<string, DetectedIcon[]>>();
-
-    for (const icon of filteredIcons) {
-      const page = icon.pageName || 'Page 1';
-      const section = getTopSectionName(icon.parentPath);
-
-      if (!pageMap.has(page)) {
-        pageMap.set(page, new Map());
+  // Group icons by Page -> then by Screen/Frame
+  const pageGroups = React.useMemo(() => {
+    const pMap = new Map<string, Map<string, DetectedIcon[]>>();
+    filteredIcons.forEach(icon => {
+      const p = icon.pageName || 'Default Page';
+      const s = icon.screenName || 'General Assets';
+      if (!pMap.has(p)) {
+        pMap.set(p, new Map());
       }
-      const sectionMap = pageMap.get(page)!;
-      if (!sectionMap.has(section)) {
-        sectionMap.set(section, []);
+      const sMap = pMap.get(p)!;
+      if (!sMap.has(s)) {
+        sMap.set(s, []);
       }
-      sectionMap.get(section)!.push(icon);
-    }
-
-    return Array.from(pageMap.entries()).map(([pageName, sectionMap]) => ({
-      pageName,
-      sections: Array.from(sectionMap.entries()).map(([sectionName, sectionIcons]) => ({
-        sectionName,
-        icons: sectionIcons,
-      })),
-    }));
+      sMap.get(s)!.push(icon);
+    });
+    return pMap;
   }, [filteredIcons]);
 
   const handleToggleAll = () => {
@@ -183,13 +174,13 @@ export const IconExportTab: React.FC<Props> = ({
     setSelectedIds(next);
   };
 
-  const handleToggleGroup = (groupIcons: DetectedIcon[]) => {
-    const allSelected = groupIcons.every(icon => selectedIds.has(icon.id));
+  const handleToggleCluster = (clusterIcons: DetectedIcon[]) => {
+    const allSelected = clusterIcons.every(i => selectedIds.has(i.id));
     const next = new Set(selectedIds);
     if (allSelected) {
-      groupIcons.forEach(icon => next.delete(icon.id));
+      clusterIcons.forEach(i => next.delete(i.id));
     } else {
-      groupIcons.forEach(icon => next.add(icon.id));
+      clusterIcons.forEach(i => next.add(i.id));
     }
     setSelectedIds(next);
   };
@@ -213,72 +204,17 @@ export const IconExportTab: React.FC<Props> = ({
     });
   };
 
-  const currentZoom = ZOOM_CONFIGS[zoomLevel] || ZOOM_CONFIGS[2];
-
-  // Render an individual icon card
-  const renderIconCard = (icon: DetectedIcon) => {
-    const isSelected = selectedIds.has(icon.id);
-
-    return (
-      <div
-        key={icon.id}
-        onClick={() => handleToggleOne(icon.id)}
-        className={`group relative flex flex-col items-center justify-between ${currentZoom.padding} rounded-md border cursor-pointer transition-all ${
-          isSelected
-            ? 'border-blue-500 bg-white shadow-xs ring-1 ring-blue-500'
-            : 'border-gray-200/90 bg-white/80 opacity-60 hover:opacity-100 hover:border-gray-300'
-        }`}
-        style={{ width: `${currentZoom.minWidth}px` }}
-        title={`${icon.name} (${icon.width}x${icon.height})\nPage: ${icon.pageName}\nGroup: ${icon.parentPath || 'Root'}`}
-      >
-        {/* Top: Checkbox + Locate */}
-        <div className="w-full flex justify-between items-center leading-none">
-          <input
-            type="checkbox"
-            checked={isSelected}
-            onChange={() => {}}
-            className={`rounded text-blue-600 focus:ring-blue-500 pointer-events-none ${
-              zoomLevel <= 2 ? 'w-2.5 h-2.5' : 'w-3 h-3'
-            }`}
-          />
-          <button
-            onClick={e => {
-              e.stopPropagation();
-              onSelectNode(icon.id);
-            }}
-            title="Locate on Figma canvas"
-            className="opacity-0 group-hover:opacity-100 text-[8px] text-blue-600 hover:text-blue-800 transition-opacity"
-          >
-            🔍
-          </button>
-        </div>
-
-        {/* Thumbnail Preview */}
-        <div className={`${currentZoom.iconBoxSize} flex items-center justify-center my-0.5`}>
-          {icon.svgPreview ? (
-            <div
-              className="w-full h-full flex items-center justify-center text-gray-800 [&_svg]:max-w-full [&_svg]:max-h-full [&_svg]:w-auto [&_svg]:h-auto [&_svg]:mx-auto"
-              dangerouslySetInnerHTML={{ __html: icon.svgPreview }}
-            />
-          ) : (
-            <div className="w-4 h-4 rounded bg-gray-100 animate-pulse" />
-          )}
-        </div>
-
-        {/* Label */}
-        {currentZoom.showText && (
-          <span
-            className={`font-medium ${currentZoom.fontSize} text-[var(--figma-color-text,#111827)] truncate w-full text-center block leading-tight mt-0.5`}
-          >
-            {icon.name}
-          </span>
-        )}
-      </div>
-    );
+  const handleMouseMove = (e: React.MouseEvent) => {
+    setCursorPos({ x: e.clientX, y: e.clientY });
   };
 
+  const currentZoom = ZOOM_CONFIGS[zoomLevel] || ZOOM_CONFIGS[2];
+
   return (
-    <div className="flex flex-col h-full space-y-2.5">
+    <div
+      onMouseMove={handleMouseMove}
+      className="relative flex flex-col h-full space-y-2.5"
+    >
       {/* 1. Scan Configuration Bar */}
       <div className="bg-[var(--figma-color-bg-secondary,#f9fafb)] p-2.5 rounded-lg border border-[var(--figma-color-border,#e5e7eb)] space-y-2">
         <div className="grid grid-cols-2 gap-2.5 text-xs">
@@ -291,11 +227,11 @@ export const IconExportTab: React.FC<Props> = ({
               onChange={e => setScope(e.target.value as any)}
               className="w-full bg-[var(--figma-color-bg,#ffffff)] text-[var(--figma-color-text,#111827)] border border-[var(--figma-color-border,#d1d5db)] rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
             >
-              <option value="page">Current Page</option>
+              <option value="document">Entire Project (All Pages - Recommended for Map View)</option>
+              <option value="page">Current Page Only</option>
               <option value="selection">
                 Current Selection {selectionCount > 0 ? `(${selectionCount} selected)` : ''}
               </option>
-              <option value="document">Entire Project (All Pages)</option>
             </select>
           </div>
 
@@ -335,7 +271,7 @@ export const IconExportTab: React.FC<Props> = ({
             className="px-3.5 py-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold rounded-md shadow-xs transition-colors flex items-center space-x-1.5"
           >
             {isScanning ? (
-              <span>Scanning Assets...</span>
+              <span>Scanning Project...</span>
             ) : (
               <span>Scan for Icons</span>
             )}
@@ -394,8 +330,8 @@ export const IconExportTab: React.FC<Props> = ({
               onChange={e => setFolderMode(e.target.value as any)}
               className="w-full bg-[var(--figma-color-bg,#ffffff)] text-[var(--figma-color-text,#111827)] border border-[var(--figma-color-border,#d1d5db)] rounded px-1.5 py-1"
             >
+              <option value="hierarchy">Page / Frame Hierarchy (Recommended)</option>
               <option value="slash">Slash Naming (Category/Name)</option>
-              <option value="hierarchy">Page / Frame Hierarchy</option>
               <option value="flat">Flat (Single Directory)</option>
             </select>
           </div>
@@ -406,7 +342,7 @@ export const IconExportTab: React.FC<Props> = ({
       {icons.length > 0 && (
         <div className="flex-1 flex flex-col min-h-0 space-y-2">
           {/* Subheader Toolbar */}
-          <div className="flex items-center justify-between text-xs pt-0.5 flex-wrap gap-1.5">
+          <div className="flex items-center justify-between text-xs pt-0.5 flex-wrap gap-1">
             <div className="flex items-center space-x-2">
               <span className="font-semibold text-[var(--figma-color-text,#111827)] whitespace-nowrap">
                 {selectedIds.size} of {icons.length} selected
@@ -429,30 +365,16 @@ export const IconExportTab: React.FC<Props> = ({
             </div>
 
             <div className="flex items-center space-x-2">
-              {/* Grouping Switcher Pill */}
-              <button
-                onClick={() => setGroupBySections(prev => !prev)}
-                className={`px-2 py-0.5 rounded text-[11px] font-medium border transition-colors flex items-center space-x-1 ${
-                  groupBySections
-                    ? 'bg-blue-50 text-blue-700 border-blue-200 font-semibold'
-                    : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'
-                }`}
-                title="Toggle Group-wise & Page-wise clustering"
-              >
-                <span>🗂️ Groups:</span>
-                <span>{groupBySections ? 'ON' : 'OFF'}</span>
-              </button>
-
-              {/* Ultra Zoom & Density Stepper / Slider */}
-              {viewMode === 'grid' && (
+              {/* Density Zoom Stepper */}
+              {(viewMode === 'grid' || viewMode === 'map') && (
                 <div
                   className="flex items-center border border-gray-200 rounded px-1.5 py-0.5 bg-gray-100 space-x-1"
-                  title={`Icon Density: ${currentZoom.label}`}
+                  title={`Density: ${currentZoom.label}`}
                 >
                   <button
                     onClick={() => setZoomLevel(prev => Math.max(1, prev - 1))}
                     disabled={zoomLevel <= 1}
-                    title="Make icons smaller (Show more icons)"
+                    title="Make icons smaller"
                     className="w-4 h-4 flex items-center justify-center text-xs font-bold text-gray-600 hover:text-black disabled:opacity-30 rounded bg-white shadow-xs"
                   >
                     −
@@ -485,124 +407,273 @@ export const IconExportTab: React.FC<Props> = ({
 
               <input
                 type="text"
-                placeholder="Search..."
+                placeholder="Search screen or icon..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                className="px-2 py-1 text-xs border border-[var(--figma-color-border,#d1d5db)] rounded bg-[var(--figma-color-bg,#ffffff)] text-[var(--figma-color-text,#111827)] focus:outline-none focus:ring-1 focus:ring-blue-500 w-24"
+                className="px-2 py-1 text-xs border border-[var(--figma-color-border,#d1d5db)] rounded bg-[var(--figma-color-bg,#ffffff)] text-[var(--figma-color-text,#111827)] focus:outline-none focus:ring-1 focus:ring-blue-500 w-28"
               />
 
-              {/* View Switcher Toggle */}
+              {/* View Switcher Toggle: MAP vs GRID vs LIST */}
               <div className="flex border border-gray-200 rounded p-0.5 bg-gray-100">
                 <button
+                  onClick={() => setViewMode('map')}
+                  title="Map View (Organic Territory Clusters & Floating Tooltips)"
+                  className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                    viewMode === 'map'
+                      ? 'bg-white shadow-xs text-blue-600 font-bold'
+                      : 'text-gray-500 hover:text-gray-900'
+                  }`}
+                >
+                  🗺️ Map
+                </button>
+                <button
                   onClick={() => setViewMode('grid')}
-                  title="Grid Preview Mode"
+                  title="Flat Grid View"
                   className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
                     viewMode === 'grid'
                       ? 'bg-white shadow-xs text-blue-600 font-bold'
                       : 'text-gray-500 hover:text-gray-900'
                   }`}
                 >
-                  Grid
+                  🔲 Grid
                 </button>
                 <button
                   onClick={() => setViewMode('list')}
-                  title="List Details Mode"
+                  title="List Table Mode"
                   className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
                     viewMode === 'list'
                       ? 'bg-white shadow-xs text-blue-600 font-bold'
                       : 'text-gray-500 hover:text-gray-900'
                   }`}
                 >
-                  List
+                  📋 List
                 </button>
               </div>
             </div>
           </div>
 
-          {/* DYNAMIC SCROLL GALLERY */}
-          <div className="flex-1 min-h-[220px] max-h-[calc(100vh-270px)] border border-[var(--figma-color-border,#e5e7eb)] rounded-lg p-2.5 overflow-y-auto bg-[var(--figma-color-bg-secondary,#fafafa)] space-y-4">
-            {viewMode === 'grid' ? (
-              filteredIcons.length === 0 ? (
-                <div className="p-8 text-center text-xs text-gray-400">No matching icons found.</div>
-              ) : groupBySections ? (
-                /* GROUPED CLUSTERS VIEW (Page-wise and Section-wise Dynamic Islands) */
-                groupedData.map((pageGroup, pageIdx) => (
-                  <div key={pageGroup.pageName} className="space-y-2">
-                    {/* Page Header (Only if multiple pages or for clarity) */}
-                    <div className="flex items-center space-x-2 pb-1 border-b border-gray-200">
-                      <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wider flex items-center space-x-1.5">
-                        <span>📄</span>
-                        <span>{pageGroup.pageName}</span>
+          {/* DYNAMIC SCROLL CONTAINER */}
+          <div className="flex-1 min-h-[240px] max-h-[calc(100vh-270px)] border border-[var(--figma-color-border,#e5e7eb)] rounded-lg p-2.5 overflow-y-auto bg-[var(--figma-color-bg-secondary,#fafafa)]">
+            {filteredIcons.length === 0 ? (
+              <div className="p-8 text-center text-xs text-gray-400">No matching assets found.</div>
+            ) : viewMode === 'map' ? (
+              /* ========================================================= */
+              /* 🗺️ MAP TERRITORY CLUSTER VIEW (User Requested Feature)    */
+              /* ========================================================= */
+              <div className="space-y-5">
+                {Array.from(pageGroups.entries()).map(([pageName, screenMap], pageIdx) => (
+                  <div key={pageName} className="space-y-2.5">
+                    {/* Page Region Header */}
+                    <div className="flex items-center space-x-2 border-b border-gray-200 pb-1 pt-1">
+                      <span className="text-xs font-bold text-gray-800 flex items-center space-x-1">
+                        <span>📄 Page:</span>
+                        <span className="text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 font-mono">
+                          {pageName}
+                        </span>
                       </span>
-                      <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.2 rounded-full font-mono">
-                        {pageGroup.sections.reduce((acc, s) => acc + s.icons.length, 0)} assets
+                      <span className="text-[10px] text-gray-400">
+                        ({Array.from(screenMap.values()).flat().length} icons across {screenMap.size} screens)
                       </span>
                     </div>
 
-                    {/* Section Clusters (Naturally wrap and hug their contents!) */}
-                    <div className="flex flex-wrap gap-2.5 items-start">
-                      {pageGroup.sections.map((sec, secIdx) => {
-                        const theme = GROUP_THEMES[(pageIdx * 3 + secIdx) % GROUP_THEMES.length];
-                        const allSelected = sec.icons.every(i => selectedIds.has(i.id));
-                        const someSelected = sec.icons.some(i => selectedIds.has(i.id));
+                    {/* Organic Screen Clusters / Territories */}
+                    <div className="flex flex-wrap gap-3.5 items-start">
+                      {Array.from(screenMap.entries()).map(([screenName, clusterIcons], screenIdx) => {
+                        const theme = TERRAIN_THEMES[(pageIdx + screenIdx) % TERRAIN_THEMES.length];
+                        const isAllSelected = clusterIcons.every(i => selectedIds.has(i.id));
+                        const isSomeSelected = clusterIcons.some(i => selectedIds.has(i.id));
 
                         return (
                           <div
-                            key={sec.sectionName}
-                            className={`inline-flex flex-col ${theme.bg} ${theme.border} border rounded-lg p-2 shadow-xs transition-all hover:shadow-md hover:border-gray-400/60`}
-                            title={`Page: ${pageGroup.pageName}\nGroup: ${sec.sectionName}\nTotal: ${sec.icons.length} assets`}
+                            key={screenName}
+                            onMouseEnter={() =>
+                              setHoveredCluster({
+                                pageName,
+                                screenName,
+                                count: clusterIcons.length,
+                              })
+                            }
+                            onMouseLeave={() => setHoveredCluster(null)}
+                            style={{
+                              // Organic map-territory contour border (not a strict rectangle!)
+                              borderRadius: '22px 34px 24px 38px',
+                            }}
+                            className={`relative border-2 border-dashed ${theme.border} ${theme.bg} ${theme.hover} p-2.5 transition-all shadow-xs flex flex-col`}
                           >
-                            {/* Group Cluster Header (Dynamic title, tooltip, and select-all-in-group) */}
-                            <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-gray-200/60 gap-2">
+                            {/* Territory Label Header Bar */}
+                            <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-gray-200/60 space-x-2">
                               <label
-                                className="flex items-center space-x-1.5 cursor-pointer select-none"
-                                title={`Click to toggle all ${sec.icons.length} icons in "${sec.sectionName}"`}
+                                onClick={e => e.stopPropagation()}
+                                className="flex items-center space-x-1.5 cursor-pointer"
                               >
                                 <input
                                   type="checkbox"
-                                  checked={allSelected}
+                                  checked={isAllSelected}
                                   ref={el => {
-                                    if (el) el.indeterminate = someSelected && !allSelected;
+                                    if (el) el.indeterminate = !isAllSelected && isSomeSelected;
                                   }}
-                                  onChange={() => handleToggleGroup(sec.icons)}
+                                  onChange={() => handleToggleCluster(clusterIcons)}
                                   className="rounded text-blue-600 focus:ring-blue-500 w-3 h-3"
                                 />
-                                <span className="font-bold text-[11px] text-gray-800 truncate max-w-[140px]">
-                                  {sec.sectionName}
+                                <span
+                                  className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${theme.badge} max-w-[140px] truncate block`}
+                                  title={screenName}
+                                >
+                                  🖥️ {screenName}
                                 </span>
                               </label>
 
-                              <span
-                                className={`text-[9px] px-1.5 py-0.2 rounded-full border font-mono font-semibold ${theme.badge}`}
-                              >
-                                {sec.icons.length}
+                              <span className="text-[9px] font-mono text-gray-500 font-medium">
+                                {clusterIcons.length}
                               </span>
                             </div>
 
-                            {/* Icons inside the group (Naturally hug width/height!) */}
-                            <div className="flex flex-wrap gap-1.5 max-w-[420px]">
-                              {sec.icons.map(icon => renderIconCard(icon))}
+                            {/* Dynamic Icon Flow (Size auto-adjusts based on icon count!) */}
+                            <div
+                              style={{
+                                display: 'grid',
+                                gridTemplateColumns: `repeat(auto-fill, minmax(${currentZoom.minWidth}px, 1fr))`,
+                                gap: zoomLevel <= 2 ? '4px' : '6px',
+                                minWidth: Math.min(380, Math.max(120, clusterIcons.length * (currentZoom.minWidth + 6))),
+                                maxWidth: '420px',
+                              }}
+                            >
+                              {clusterIcons.map(icon => {
+                                const isSelected = selectedIds.has(icon.id);
+
+                                return (
+                                  <div
+                                    key={icon.id}
+                                    onClick={() => handleToggleOne(icon.id)}
+                                    className={`group relative flex flex-col items-center justify-between ${currentZoom.padding} rounded-md border cursor-pointer transition-all ${
+                                      isSelected
+                                        ? 'border-blue-500 bg-white shadow-xs ring-1 ring-blue-500'
+                                        : 'border-gray-200 bg-white/70 opacity-60 hover:opacity-100 hover:border-gray-300'
+                                    }`}
+                                    title={`${icon.name} (${icon.width}x${icon.height})`}
+                                  >
+                                    <div className="w-full flex justify-between items-center leading-none">
+                                      <input
+                                        type="checkbox"
+                                        checked={isSelected}
+                                        onChange={() => {}}
+                                        className={`rounded text-blue-600 focus:ring-blue-500 pointer-events-none ${
+                                          zoomLevel <= 2 ? 'w-2.5 h-2.5' : 'w-3 h-3'
+                                        }`}
+                                      />
+                                      <button
+                                        onClick={e => {
+                                          e.stopPropagation();
+                                          onSelectNode(icon.id);
+                                        }}
+                                        title="Locate on canvas"
+                                        className="opacity-0 group-hover:opacity-100 text-[8px] text-blue-600 hover:text-blue-800 transition-opacity"
+                                      >
+                                        🔍
+                                      </button>
+                                    </div>
+
+                                    <div className={`${currentZoom.iconBoxSize} flex items-center justify-center my-0.5`}>
+                                      {icon.svgPreview ? (
+                                        <div
+                                          className="w-full h-full flex items-center justify-center text-gray-800 [&_svg]:max-w-full [&_svg]:max-h-full [&_svg]:w-auto [&_svg]:h-auto [&_svg]:mx-auto"
+                                          dangerouslySetInnerHTML={{ __html: icon.svgPreview }}
+                                        />
+                                      ) : (
+                                        <div className="w-4 h-4 rounded bg-gray-100 animate-pulse" />
+                                      )}
+                                    </div>
+
+                                    {currentZoom.showText && (
+                                      <span
+                                        className={`font-medium ${currentZoom.fontSize} text-[var(--figma-color-text,#111827)] truncate w-full text-center block leading-tight mt-0.5`}
+                                      >
+                                        {icon.name}
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
                         );
                       })}
                     </div>
                   </div>
-                ))
-              ) : (
-                /* FLAT GRID VIEW (All icons in unified auto-fill grid) */
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: `repeat(auto-fill, minmax(${currentZoom.minWidth}px, 1fr))`,
-                    gap: zoomLevel <= 2 ? '4px' : '6px',
-                  }}
-                >
-                  {filteredIcons.map(icon => renderIconCard(icon))}
-                </div>
-              )
+                ))}
+              </div>
+            ) : viewMode === 'grid' ? (
+              /* ========================================================= */
+              /* 🔲 FLAT GRID VIEW                                         */
+              /* ========================================================= */
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: `repeat(auto-fill, minmax(${currentZoom.minWidth}px, 1fr))`,
+                  gap: zoomLevel <= 2 ? '4px' : '6px',
+                }}
+              >
+                {filteredIcons.map(icon => {
+                  const isSelected = selectedIds.has(icon.id);
+
+                  return (
+                    <div
+                      key={icon.id}
+                      onClick={() => handleToggleOne(icon.id)}
+                      className={`group relative flex flex-col items-center justify-between ${currentZoom.padding} rounded-md border cursor-pointer transition-all ${
+                        isSelected
+                          ? 'border-blue-500 bg-white shadow-xs ring-1 ring-blue-500'
+                          : 'border-gray-200 bg-white/70 opacity-60 hover:opacity-100 hover:border-gray-300'
+                      }`}
+                      title={`${icon.name} (${icon.width}x${icon.height})\nScreen: ${icon.screenName || 'Unknown'}\nPage: ${icon.pageName}`}
+                    >
+                      <div className="w-full flex justify-between items-center leading-none">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {}}
+                          className={`rounded text-blue-600 focus:ring-blue-500 pointer-events-none ${
+                            zoomLevel <= 2 ? 'w-2.5 h-2.5' : 'w-3 h-3'
+                          }`}
+                        />
+                        <button
+                          onClick={e => {
+                            e.stopPropagation();
+                            onSelectNode(icon.id);
+                          }}
+                          title="Locate on canvas"
+                          className="opacity-0 group-hover:opacity-100 text-[8px] text-blue-600 hover:text-blue-800 transition-opacity"
+                        >
+                          🔍
+                        </button>
+                      </div>
+
+                      <div className={`${currentZoom.iconBoxSize} flex items-center justify-center my-0.5`}>
+                        {icon.svgPreview ? (
+                          <div
+                            className="w-full h-full flex items-center justify-center text-gray-800 [&_svg]:max-w-full [&_svg]:max-h-full [&_svg]:w-auto [&_svg]:h-auto [&_svg]:mx-auto"
+                            dangerouslySetInnerHTML={{ __html: icon.svgPreview }}
+                          />
+                        ) : (
+                          <div className="w-4 h-4 rounded bg-gray-100 animate-pulse" />
+                        )}
+                      </div>
+
+                      {currentZoom.showText && (
+                        <span
+                          className={`font-medium ${currentZoom.fontSize} text-[var(--figma-color-text,#111827)] truncate w-full text-center block leading-tight mt-0.5`}
+                        >
+                          {icon.name}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             ) : (
-              /* LIST VIEW */
+              /* ========================================================= */
+              /* 📋 LIST TABLE VIEW                                        */
+              /* ========================================================= */
               <div className="divide-y divide-[var(--figma-color-border,#f3f4f6)] bg-[var(--figma-color-bg,#ffffff)]">
                 {filteredIcons.map(icon => (
                   <div
@@ -631,7 +702,7 @@ export const IconExportTab: React.FC<Props> = ({
                           {icon.name}
                         </span>
                         <span className="text-[10px] text-gray-400 block truncate">
-                          📄 {icon.pageName} • {icon.parentPath || 'Root'}
+                          {icon.pageName} &gt; {icon.screenName}
                         </span>
                       </div>
                     </label>
@@ -675,6 +746,37 @@ export const IconExportTab: React.FC<Props> = ({
           <p className="text-[11px] text-gray-400">
             Select a target scope above and click &quot;Scan for Icons&quot; to auto-detect all vectors.
           </p>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* 🪟 REAL-TIME FLOATING MOUSE TOOLTIP (Tool Text)           */}
+      {/* ========================================================= */}
+      {hoveredCluster && cursorPos && (
+        <div
+          style={{
+            position: 'fixed',
+            left: `${cursorPos.x + 14}px`,
+            top: `${cursorPos.y + 14}px`,
+            pointerEvents: 'none',
+            zIndex: 9999,
+          }}
+          className="bg-gray-900/95 text-white backdrop-blur-md px-2.5 py-1.5 rounded-lg shadow-xl border border-gray-700 text-[11px] space-y-0.5 animate-in fade-in zoom-in-95 duration-100 max-w-xs"
+        >
+          <div className="flex items-center space-x-1.5 font-bold text-white tracking-wide">
+            <span>🗺️</span>
+            <span className="truncate">{hoveredCluster.screenName}</span>
+          </div>
+          <div className="text-[10px] text-gray-300 flex items-center space-x-2">
+            <span>📄 Page: {hoveredCluster.pageName}</span>
+            <span>•</span>
+            <span className="text-blue-400 font-mono font-semibold">
+              {hoveredCluster.count} assets
+            </span>
+          </div>
+          <div className="text-[9px] text-gray-400 italic pt-0.5">
+            Click cluster checkbox to toggle screen
+          </div>
         </div>
       )}
     </div>

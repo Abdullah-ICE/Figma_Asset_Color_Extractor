@@ -54,6 +54,17 @@
     }
     return parts.join(" / ");
   }
+  function getTopLevelScreenName(node) {
+    let curr = node;
+    let topScreen = node.name;
+    while (curr && curr.parent && curr.parent.type !== "PAGE" && curr.parent.type !== "DOCUMENT") {
+      curr = curr.parent;
+      if ("name" in curr) {
+        topScreen = curr.name;
+      }
+    }
+    return topScreen;
+  }
   function scanForIcons(rootNodes, pageName, config) {
     const icons = [];
     const visited = /* @__PURE__ */ new Set();
@@ -67,6 +78,7 @@
           width: Math.round(node.width),
           height: Math.round(node.height),
           pageName,
+          screenName: getTopLevelScreenName(node),
           parentPath: buildHierarchyPath(node),
           slashPath: node.name.includes("/") ? node.name : "",
           type: node.type

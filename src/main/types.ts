@@ -4,9 +4,10 @@ export interface DetectedIcon {
   width: number;
   height: number;
   pageName: string;
-  parentPath: string;
-  slashPath: string;
-  type: string;
+  screenName: string; // Top-level artboard/screen/frame name
+  parentPath: string; // Hierarchical path (e.g., "Icons / Action")
+  slashPath: string;  // Extracted from slash naming (e.g., "Action / Delete")
+  type: string;       // COMPONENT, INSTANCE, FRAME, etc.
   svgPreview?: string;
 }
 
