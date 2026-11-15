@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { DetectedIcon, ExportRequest, ScanConfig } from '../../main/types';
 
 interface Props {
@@ -72,6 +72,23 @@ const ZOOM_CONFIGS: Record<
   },
 };
 
+// Pastel theme palette for instant visual recognition of different groups
+const GROUP_THEMES = [
+  { bg: 'bg-blue-50/50', border: 'border-blue-200/80', badge: 'bg-blue-100 text-blue-800 border-blue-200', dot: 'bg-blue-500' },
+  { bg: 'bg-indigo-50/50', border: 'border-indigo-200/80', badge: 'bg-indigo-100 text-indigo-800 border-indigo-200', dot: 'bg-indigo-500' },
+  { bg: 'bg-emerald-50/50', border: 'border-emerald-200/80', badge: 'bg-emerald-100 text-emerald-800 border-emerald-200', dot: 'bg-emerald-500' },
+  { bg: 'bg-amber-50/50', border: 'border-amber-200/80', badge: 'bg-amber-100 text-amber-800 border-amber-200', dot: 'bg-amber-500' },
+  { bg: 'bg-purple-50/50', border: 'border-purple-200/80', badge: 'bg-purple-100 text-purple-800 border-purple-200', dot: 'bg-purple-500' },
+  { bg: 'bg-rose-50/50', border: 'border-rose-200/80', badge: 'bg-rose-100 text-rose-800 border-rose-200', dot: 'bg-rose-500' },
+  { bg: 'bg-cyan-50/50', border: 'border-cyan-200/80', badge: 'bg-cyan-100 text-cyan-800 border-cyan-200', dot: 'bg-cyan-500' },
+];
+
+function getTopSectionName(parentPath: string): string {
+  if (!parentPath) return 'Direct Assets';
+  const parts = parentPath.split('/').map(p => p.trim()).filter(Boolean);
+  return parts[0] || 'Direct Assets';
+}
+
 export const IconExportTab: React.FC<Props> = ({
   icons,
   isScanning,
@@ -92,7 +109,7 @@ export const IconExportTab: React.FC<Props> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  // Zoom levels: 1 (Micro) to 6 (Large). Default to 2 (Tiny) for high density!
+  const [groupBySections, setGroupBySections] = useState<boolean>(true); // Smart default: Grouped by Page & Frame!
   const [zoomLevel, setZoomLevel] = useState<number>(2);
 
   // Update selected IDs whenever new icons are scanned
@@ -100,14 +117,43 @@ export const IconExportTab: React.FC<Props> = ({
     setSelectedIds(new Set(icons.map(i => i.id)));
   }, [icons]);
 
-  const filteredIcons = icons.filter(icon => {
+  const filteredIcons = useMemo(() => {
     const q = searchQuery.toLowerCase();
-    return (
-      icon.name.toLowerCase().includes(q) ||
-      icon.parentPath.toLowerCase().includes(q) ||
-      icon.slashPath.toLowerCase().includes(q)
+    return icons.filter(
+      icon =>
+        icon.name.toLowerCase().includes(q) ||
+        icon.parentPath.toLowerCase().includes(q) ||
+        icon.slashPath.toLowerCase().includes(q) ||
+        icon.pageName.toLowerCase().includes(q)
     );
-  });
+  }, [icons, searchQuery]);
+
+  // Group icons by Page, then by Frame/Group Section
+  const groupedData = useMemo(() => {
+    const pageMap = new Map<string, Map<string, DetectedIcon[]>>();
+
+    for (const icon of filteredIcons) {
+      const page = icon.pageName || 'Page 1';
+      const section = getTopSectionName(icon.parentPath);
+
+      if (!pageMap.has(page)) {
+        pageMap.set(page, new Map());
+      }
+      const sectionMap = pageMap.get(page)!;
+      if (!sectionMap.has(section)) {
+        sectionMap.set(section, []);
+      }
+      sectionMap.get(section)!.push(icon);
+    }
+
+    return Array.from(pageMap.entries()).map(([pageName, sectionMap]) => ({
+      pageName,
+      sections: Array.from(sectionMap.entries()).map(([sectionName, sectionIcons]) => ({
+        sectionName,
+        icons: sectionIcons,
+      })),
+    }));
+  }, [filteredIcons]);
 
   const handleToggleAll = () => {
     if (selectedIds.size === filteredIcons.length) {
@@ -137,6 +183,17 @@ export const IconExportTab: React.FC<Props> = ({
     setSelectedIds(next);
   };
 
+  const handleToggleGroup = (groupIcons: DetectedIcon[]) => {
+    const allSelected = groupIcons.every(icon => selectedIds.has(icon.id));
+    const next = new Set(selectedIds);
+    if (allSelected) {
+      groupIcons.forEach(icon => next.delete(icon.id));
+    } else {
+      groupIcons.forEach(icon => next.add(icon.id));
+    }
+    setSelectedIds(next);
+  };
+
   const handleStartScan = () => {
     onScan({
       scope,
@@ -157,6 +214,68 @@ export const IconExportTab: React.FC<Props> = ({
   };
 
   const currentZoom = ZOOM_CONFIGS[zoomLevel] || ZOOM_CONFIGS[2];
+
+  // Render an individual icon card
+  const renderIconCard = (icon: DetectedIcon) => {
+    const isSelected = selectedIds.has(icon.id);
+
+    return (
+      <div
+        key={icon.id}
+        onClick={() => handleToggleOne(icon.id)}
+        className={`group relative flex flex-col items-center justify-between ${currentZoom.padding} rounded-md border cursor-pointer transition-all ${
+          isSelected
+            ? 'border-blue-500 bg-white shadow-xs ring-1 ring-blue-500'
+            : 'border-gray-200/90 bg-white/80 opacity-60 hover:opacity-100 hover:border-gray-300'
+        }`}
+        style={{ width: `${currentZoom.minWidth}px` }}
+        title={`${icon.name} (${icon.width}x${icon.height})\nPage: ${icon.pageName}\nGroup: ${icon.parentPath || 'Root'}`}
+      >
+        {/* Top: Checkbox + Locate */}
+        <div className="w-full flex justify-between items-center leading-none">
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={() => {}}
+            className={`rounded text-blue-600 focus:ring-blue-500 pointer-events-none ${
+              zoomLevel <= 2 ? 'w-2.5 h-2.5' : 'w-3 h-3'
+            }`}
+          />
+          <button
+            onClick={e => {
+              e.stopPropagation();
+              onSelectNode(icon.id);
+            }}
+            title="Locate on Figma canvas"
+            className="opacity-0 group-hover:opacity-100 text-[8px] text-blue-600 hover:text-blue-800 transition-opacity"
+          >
+            🔍
+          </button>
+        </div>
+
+        {/* Thumbnail Preview */}
+        <div className={`${currentZoom.iconBoxSize} flex items-center justify-center my-0.5`}>
+          {icon.svgPreview ? (
+            <div
+              className="w-full h-full flex items-center justify-center text-gray-800 [&_svg]:max-w-full [&_svg]:max-h-full [&_svg]:w-auto [&_svg]:h-auto [&_svg]:mx-auto"
+              dangerouslySetInnerHTML={{ __html: icon.svgPreview }}
+            />
+          ) : (
+            <div className="w-4 h-4 rounded bg-gray-100 animate-pulse" />
+          )}
+        </div>
+
+        {/* Label */}
+        {currentZoom.showText && (
+          <span
+            className={`font-medium ${currentZoom.fontSize} text-[var(--figma-color-text,#111827)] truncate w-full text-center block leading-tight mt-0.5`}
+          >
+            {icon.name}
+          </span>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="flex flex-col h-full space-y-2.5">
@@ -287,7 +406,7 @@ export const IconExportTab: React.FC<Props> = ({
       {icons.length > 0 && (
         <div className="flex-1 flex flex-col min-h-0 space-y-2">
           {/* Subheader Toolbar */}
-          <div className="flex items-center justify-between text-xs pt-0.5 flex-wrap gap-1">
+          <div className="flex items-center justify-between text-xs pt-0.5 flex-wrap gap-1.5">
             <div className="flex items-center space-x-2">
               <span className="font-semibold text-[var(--figma-color-text,#111827)] whitespace-nowrap">
                 {selectedIds.size} of {icons.length} selected
@@ -310,6 +429,20 @@ export const IconExportTab: React.FC<Props> = ({
             </div>
 
             <div className="flex items-center space-x-2">
+              {/* Grouping Switcher Pill */}
+              <button
+                onClick={() => setGroupBySections(prev => !prev)}
+                className={`px-2 py-0.5 rounded text-[11px] font-medium border transition-colors flex items-center space-x-1 ${
+                  groupBySections
+                    ? 'bg-blue-50 text-blue-700 border-blue-200 font-semibold'
+                    : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'
+                }`}
+                title="Toggle Group-wise & Page-wise clustering"
+              >
+                <span>🗂️ Groups:</span>
+                <span>{groupBySections ? 'ON' : 'OFF'}</span>
+              </button>
+
               {/* Ultra Zoom & Density Stepper / Slider */}
               {viewMode === 'grid' && (
                 <div
@@ -332,7 +465,7 @@ export const IconExportTab: React.FC<Props> = ({
                     step={1}
                     value={zoomLevel}
                     onChange={e => setZoomLevel(Number(e.target.value))}
-                    className="w-14 h-1 bg-gray-300 rounded cursor-pointer accent-blue-600"
+                    className="w-12 h-1 bg-gray-300 rounded cursor-pointer accent-blue-600"
                   />
 
                   <button
@@ -386,12 +519,78 @@ export const IconExportTab: React.FC<Props> = ({
             </div>
           </div>
 
-          {/* DYNAMIC AUTO-FILL SCROLL GALLERY */}
-          <div className="flex-1 min-h-[220px] max-h-[calc(100vh-270px)] border border-[var(--figma-color-border,#e5e7eb)] rounded-lg p-2 overflow-y-auto bg-[var(--figma-color-bg-secondary,#fafafa)]">
+          {/* DYNAMIC SCROLL GALLERY */}
+          <div className="flex-1 min-h-[220px] max-h-[calc(100vh-270px)] border border-[var(--figma-color-border,#e5e7eb)] rounded-lg p-2.5 overflow-y-auto bg-[var(--figma-color-bg-secondary,#fafafa)] space-y-4">
             {viewMode === 'grid' ? (
               filteredIcons.length === 0 ? (
                 <div className="p-8 text-center text-xs text-gray-400">No matching icons found.</div>
+              ) : groupBySections ? (
+                /* GROUPED CLUSTERS VIEW (Page-wise and Section-wise Dynamic Islands) */
+                groupedData.map((pageGroup, pageIdx) => (
+                  <div key={pageGroup.pageName} className="space-y-2">
+                    {/* Page Header (Only if multiple pages or for clarity) */}
+                    <div className="flex items-center space-x-2 pb-1 border-b border-gray-200">
+                      <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wider flex items-center space-x-1.5">
+                        <span>📄</span>
+                        <span>{pageGroup.pageName}</span>
+                      </span>
+                      <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.2 rounded-full font-mono">
+                        {pageGroup.sections.reduce((acc, s) => acc + s.icons.length, 0)} assets
+                      </span>
+                    </div>
+
+                    {/* Section Clusters (Naturally wrap and hug their contents!) */}
+                    <div className="flex flex-wrap gap-2.5 items-start">
+                      {pageGroup.sections.map((sec, secIdx) => {
+                        const theme = GROUP_THEMES[(pageIdx * 3 + secIdx) % GROUP_THEMES.length];
+                        const allSelected = sec.icons.every(i => selectedIds.has(i.id));
+                        const someSelected = sec.icons.some(i => selectedIds.has(i.id));
+
+                        return (
+                          <div
+                            key={sec.sectionName}
+                            className={`inline-flex flex-col ${theme.bg} ${theme.border} border rounded-lg p-2 shadow-xs transition-all hover:shadow-md hover:border-gray-400/60`}
+                            title={`Page: ${pageGroup.pageName}\nGroup: ${sec.sectionName}\nTotal: ${sec.icons.length} assets`}
+                          >
+                            {/* Group Cluster Header (Dynamic title, tooltip, and select-all-in-group) */}
+                            <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-gray-200/60 gap-2">
+                              <label
+                                className="flex items-center space-x-1.5 cursor-pointer select-none"
+                                title={`Click to toggle all ${sec.icons.length} icons in "${sec.sectionName}"`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={allSelected}
+                                  ref={el => {
+                                    if (el) el.indeterminate = someSelected && !allSelected;
+                                  }}
+                                  onChange={() => handleToggleGroup(sec.icons)}
+                                  className="rounded text-blue-600 focus:ring-blue-500 w-3 h-3"
+                                />
+                                <span className="font-bold text-[11px] text-gray-800 truncate max-w-[140px]">
+                                  {sec.sectionName}
+                                </span>
+                              </label>
+
+                              <span
+                                className={`text-[9px] px-1.5 py-0.2 rounded-full border font-mono font-semibold ${theme.badge}`}
+                              >
+                                {sec.icons.length}
+                              </span>
+                            </div>
+
+                            {/* Icons inside the group (Naturally hug width/height!) */}
+                            <div className="flex flex-wrap gap-1.5 max-w-[420px]">
+                              {sec.icons.map(icon => renderIconCard(icon))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))
               ) : (
+                /* FLAT GRID VIEW (All icons in unified auto-fill grid) */
                 <div
                   style={{
                     display: 'grid',
@@ -399,65 +598,7 @@ export const IconExportTab: React.FC<Props> = ({
                     gap: zoomLevel <= 2 ? '4px' : '6px',
                   }}
                 >
-                  {filteredIcons.map(icon => {
-                    const isSelected = selectedIds.has(icon.id);
-
-                    return (
-                      <div
-                        key={icon.id}
-                        onClick={() => handleToggleOne(icon.id)}
-                        className={`group relative flex flex-col items-center justify-between ${currentZoom.padding} rounded-md border cursor-pointer transition-all ${
-                          isSelected
-                            ? 'border-blue-500 bg-white shadow-xs ring-1 ring-blue-500'
-                            : 'border-gray-200 bg-white/70 opacity-60 hover:opacity-100 hover:border-gray-300'
-                        }`}
-                        title={`${icon.name} (${icon.width}x${icon.height})\n${icon.parentPath || 'Root'}`}
-                      >
-                        {/* Top row: Checkbox + Locate */}
-                        <div className="w-full flex justify-between items-center leading-none">
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => {}}
-                            className={`rounded text-blue-600 focus:ring-blue-500 pointer-events-none ${
-                              zoomLevel <= 2 ? 'w-2.5 h-2.5' : 'w-3 h-3'
-                            }`}
-                          />
-                          <button
-                            onClick={e => {
-                              e.stopPropagation();
-                              onSelectNode(icon.id);
-                            }}
-                            title="Locate on canvas"
-                            className="opacity-0 group-hover:opacity-100 text-[8px] text-blue-600 hover:text-blue-800 transition-opacity"
-                          >
-                            🔍
-                          </button>
-                        </div>
-
-                        {/* Vector SVG Thumbnail Preview */}
-                        <div className={`${currentZoom.iconBoxSize} flex items-center justify-center my-0.5`}>
-                          {icon.svgPreview ? (
-                            <div
-                              className="w-full h-full flex items-center justify-center text-gray-800 [&_svg]:max-w-full [&_svg]:max-h-full [&_svg]:w-auto [&_svg]:h-auto [&_svg]:mx-auto"
-                              dangerouslySetInnerHTML={{ __html: icon.svgPreview }}
-                            />
-                          ) : (
-                            <div className="w-4 h-4 rounded bg-gray-100 animate-pulse" />
-                          )}
-                        </div>
-
-                        {/* Label (Only shown if showText is true for zoom level) */}
-                        {currentZoom.showText && (
-                          <span
-                            className={`font-medium ${currentZoom.fontSize} text-[var(--figma-color-text,#111827)] truncate w-full text-center block leading-tight mt-0.5`}
-                          >
-                            {icon.name}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })}
+                  {filteredIcons.map(icon => renderIconCard(icon))}
                 </div>
               )
             ) : (
@@ -489,11 +630,9 @@ export const IconExportTab: React.FC<Props> = ({
                         <span className="font-medium text-[var(--figma-color-text,#111827)]">
                           {icon.name}
                         </span>
-                        {icon.parentPath && (
-                          <span className="text-[10px] text-gray-400 block truncate">
-                            {icon.parentPath}
-                          </span>
-                        )}
+                        <span className="text-[10px] text-gray-400 block truncate">
+                          📄 {icon.pageName} • {icon.parentPath || 'Root'}
+                        </span>
                       </div>
                     </label>
 
