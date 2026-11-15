@@ -1,0 +1,43 @@
+{
+  "name": "figma-asset-color-extractor",
+  "version": "1.0.0",
+  "description": "Smart Figma Plugin for batch-extracting icons into folderized ZIPs and extracting project colors into CSS/Tailwind/JSON tokens.",
+  "main": "dist/code.js",
+  "scripts": {
+    "build:main": "esbuild src/main/code.ts --bundle --outfile=dist/code.js --target=es2020",
+    "build:ui": "vite build",
+    "build": "npm run build:main && npm run build:ui",
+    "dev": "npm run build"
+  },
+  "keywords": [
+    "figma",
+    "figma-plugin",
+    "icon-extractor",
+    "color-extractor",
+    "design-tokens",
+    "svg",
+    "png"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "colord": "^2.9.3",
+    "jszip": "^3.10.1",
+    "lucide-react": "^0.475.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@figma/plugin-typings": "^1.106.0",
+    "@tailwindcss/vite": "^4.3.5",
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "esbuild": "^0.25.0",
+    "tailwindcss": "^4.3.5",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0",
+    "vite-plugin-singlefile": "^2.1.0"
+  }
+}

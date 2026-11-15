@@ -1,0 +1,438 @@
+"use strict";
+(() => {
+  // src/main/iconDetector.ts
+  function isIconCandidate(node, config) {
+    if (!node.visible) return false;
+    if (config.onlyComponents) {
+      if (node.type !== "COMPONENT" && node.type !== "INSTANCE") {
+        return false;
+      }
+    }
+    const allowedContainers = ["COMPONENT", "INSTANCE", "FRAME", "GROUP", "BOOLEAN_OPERATION"];
+    if (!allowedContainers.includes(node.type)) {
+      return false;
+    }
+    const w = node.width;
+    const h = node.height;
+    if (w < config.minDimension || h < config.minDimension) return false;
+    if (w > config.maxDimension || h > config.maxDimension) return false;
+    const ratio = w / h;
+    if (ratio < 0.75 || ratio > 1.33) return false;
+    if ("children" in node) {
+      const children = node.children;
+      if (children.length === 0 && node.type !== "BOOLEAN_OPERATION") return false;
+      if (hasTextLayer(node)) return false;
+      if (!hasAnyVectorLayer(node)) return false;
+    }
+    return true;
+  }
+  function hasTextLayer(container) {
+    for (const child of container.children) {
+      if (child.type === "TEXT") return true;
+      if ("children" in child) {
+        if (hasTextLayer(child)) return true;
+      }
+    }
+    return false;
+  }
+  function hasAnyVectorLayer(container) {
+    const vectorTypes = ["VECTOR", "BOOLEAN_OPERATION", "ELLIPSE", "LINE", "POLYGON", "STAR", "RECTANGLE"];
+    for (const child of container.children) {
+      if (vectorTypes.includes(child.type)) return true;
+      if ("children" in child) {
+        if (hasAnyVectorLayer(child)) return true;
+      }
+    }
+    return false;
+  }
+  function buildHierarchyPath(node) {
+    const parts = [];
+    let curr = node.parent;
+    while (curr && curr.type !== "PAGE" && curr.type !== "DOCUMENT") {
+      parts.unshift(curr.name.trim());
+      curr = curr.parent;
+    }
+    return parts.join(" / ");
+  }
+  function scanForIcons(rootNodes, pageName, config) {
+    const icons = [];
+    const visited = /* @__PURE__ */ new Set();
+    function traverse(node) {
+      if (visited.has(node.id)) return;
+      visited.add(node.id);
+      if (isIconCandidate(node, config)) {
+        icons.push({
+          id: node.id,
+          name: node.name,
+          width: Math.round(node.width),
+          height: Math.round(node.height),
+          pageName,
+          parentPath: buildHierarchyPath(node),
+          slashPath: node.name.includes("/") ? node.name : "",
+          type: node.type
+        });
+        return;
+      }
+      if ("children" in node && node.type !== "BOOLEAN_OPERATION") {
+        for (const child of node.children) {
+          traverse(child);
+        }
+      }
+    }
+    for (const root of rootNodes) {
+      traverse(root);
+    }
+    return icons;
+  }
+
+  // src/main/colorExtractor.ts
+  function figmaColorToHex(color, opacity = 1) {
+    const r = Math.min(255, Math.max(0, Math.round(color.r * 255)));
+    const g = Math.min(255, Math.max(0, Math.round(color.g * 255)));
+    const b = Math.min(255, Math.max(0, Math.round(color.b * 255)));
+    const toHex = (n) => n.toString(16).padStart(2, "0").toUpperCase();
+    if (opacity < 0.999) {
+      const a = Math.min(255, Math.max(0, Math.round(opacity * 255)));
+      return `#${toHex(r)}${toHex(g)}${toHex(b)}${toHex(a)}`;
+    }
+    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+  }
+  function extractProjectColors(rootNodes) {
+    const colorMap = /* @__PURE__ */ new Map();
+    try {
+      const localStyles = figma.getLocalPaintStyles();
+      for (const style of localStyles) {
+        for (const paint of style.paints) {
+          if (paint.type === "SOLID" && paint.visible !== false) {
+            const alpha = paint.opacity ?? 1;
+            const hex = figmaColorToHex(paint.color, alpha);
+            colorMap.set(hex, {
+              hex,
+              rgb: {
+                r: Math.round(paint.color.r * 255),
+                g: Math.round(paint.color.g * 255),
+                b: Math.round(paint.color.b * 255),
+                a: Number(alpha.toFixed(2))
+              },
+              name: style.name,
+              usageCount: 0,
+              source: "style"
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Could not read local paint styles:", err);
+    }
+    try {
+      if (figma.variables && typeof figma.variables.getLocalVariables === "function") {
+        const colorVariables = figma.variables.getLocalVariables("COLOR");
+        for (const variable of colorVariables) {
+          const defaultModeId = Object.keys(variable.valuesByMode)[0];
+          const val = variable.valuesByMode[defaultModeId];
+          if (val && typeof val === "object" && "r" in val) {
+            const colorVal = val;
+            const alpha = colorVal.a ?? 1;
+            const hex = figmaColorToHex(colorVal, alpha);
+            if (!colorMap.has(hex)) {
+              colorMap.set(hex, {
+                hex,
+                rgb: {
+                  r: Math.round(colorVal.r * 255),
+                  g: Math.round(colorVal.g * 255),
+                  b: Math.round(colorVal.b * 255),
+                  a: Number(alpha.toFixed(2))
+                },
+                name: variable.name,
+                usageCount: 0,
+                source: "variable"
+              });
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Could not read local variables:", err);
+    }
+    function inspectPaints(paints) {
+      if (!Array.isArray(paints)) return;
+      for (const paint of paints) {
+        if (paint.type === "SOLID" && paint.visible !== false) {
+          const alpha = paint.opacity ?? 1;
+          const hex = figmaColorToHex(paint.color, alpha);
+          const existing = colorMap.get(hex);
+          if (existing) {
+            existing.usageCount++;
+          } else {
+            colorMap.set(hex, {
+              hex,
+              rgb: {
+                r: Math.round(paint.color.r * 255),
+                g: Math.round(paint.color.g * 255),
+                b: Math.round(paint.color.b * 255),
+                a: Number(alpha.toFixed(2))
+              },
+              usageCount: 1,
+              source: "raw_node"
+            });
+          }
+        }
+      }
+    }
+    function walk(node) {
+      if (!node.visible) return;
+      if ("fills" in node) {
+        inspectPaints(node.fills);
+      }
+      if ("strokes" in node) {
+        inspectPaints(node.strokes);
+      }
+      if ("children" in node) {
+        for (const child of node.children) {
+          walk(child);
+        }
+      }
+    }
+    for (const root of rootNodes) {
+      walk(root);
+    }
+    return Array.from(colorMap.values()).sort((a, b) => {
+      if (a.source === "style" && b.source !== "style") return -1;
+      if (b.source === "style" && a.source !== "style") return 1;
+      return b.usageCount - a.usageCount;
+    });
+  }
+
+  // src/main/exportEngine.ts
+  function sanitizePathSegment(segment) {
+    return segment.replace(/[/\\?%*:|"<>]/g, "-").replace(/\s+/g, " ").trim();
+  }
+  function getMeaningfulParentFolder(node) {
+    const meaningfulNames = [];
+    let curr = node.parent;
+    while (curr && curr.type !== "PAGE" && curr.type !== "DOCUMENT") {
+      const name = sanitizePathSegment(curr.name);
+      if (name && !/^Frame\s*\d+$/i.test(name)) {
+        meaningfulNames.unshift(name);
+      }
+      curr = curr.parent;
+    }
+    return meaningfulNames.slice(-2).join("/");
+  }
+  function resolveRelativePath(node, pageName, folderMode) {
+    const cleanName = sanitizePathSegment(node.name);
+    if (folderMode === "slash") {
+      if (node.name.includes("/")) {
+        const parts = node.name.split("/").map((p) => sanitizePathSegment(p)).filter(Boolean);
+        return parts.join("/");
+      }
+      const parentFolder = getMeaningfulParentFolder(node);
+      return parentFolder ? `${parentFolder}/${cleanName}` : cleanName;
+    }
+    if (folderMode === "hierarchy") {
+      const ancestors = [];
+      let curr = node.parent;
+      while (curr && curr.type !== "PAGE" && curr.type !== "DOCUMENT") {
+        const parentName = sanitizePathSegment(curr.name);
+        if (parentName) {
+          ancestors.unshift(parentName);
+        }
+        curr = curr.parent;
+      }
+      const folder = ancestors.filter(Boolean).join("/");
+      const safePage = sanitizePathSegment(pageName);
+      return folder ? `${safePage}/${folder}/${cleanName}` : `${safePage}/${cleanName}`;
+    }
+    return cleanName;
+  }
+  async function processBatchExport(request) {
+    const { nodeIds, format, scale, folderMode } = request;
+    const total = nodeIds.length;
+    const CHUNK_SIZE = 12;
+    let processedCount = 0;
+    for (let i = 0; i < total; i += CHUNK_SIZE) {
+      const chunkIds = nodeIds.slice(i, i + CHUNK_SIZE);
+      for (const id of chunkIds) {
+        const node = figma.getNodeById(id);
+        if (!node) {
+          processedCount++;
+          continue;
+        }
+        try {
+          const page = getPageOfNode(node);
+          const pageName = page ? page.name : "Icons";
+          const relativePath = resolveRelativePath(node, pageName, folderMode);
+          const exportSettings = format === "SVG" ? {
+            format: "SVG",
+            svgIdAttribute: false,
+            svgOutlineText: true,
+            svgSimplifyStroke: true
+          } : format === "PDF" ? {
+            format: "PDF"
+          } : {
+            format: "PNG",
+            constraint: { type: "SCALE", value: scale }
+          };
+          const bytes = await node.exportAsync(exportSettings);
+          processedCount++;
+          const msg = {
+            type: "EXPORT_CHUNK",
+            current: processedCount,
+            total,
+            item: {
+              id: node.id,
+              name: sanitizePathSegment(node.name),
+              relativePath,
+              bytes: Array.from(bytes)
+            }
+          };
+          figma.ui.postMessage(msg);
+        } catch (err) {
+          console.error(`Failed to export node ${node.name} (${node.id}):`, err);
+          processedCount++;
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    const completeMsg = { type: "EXPORT_COMPLETE" };
+    figma.ui.postMessage(completeMsg);
+  }
+  function getPageOfNode(node) {
+    let curr = node;
+    while (curr) {
+      if (curr.type === "PAGE") return curr;
+      curr = curr.parent;
+    }
+    return null;
+  }
+
+  // src/main/code.ts
+  figma.showUI(__html__, {
+    width: 680,
+    height: 720,
+    themeColors: true,
+    title: "Asset & Color Extractor"
+  });
+  figma.on("selectionchange", () => {
+    const count = figma.currentPage.selection.length;
+    const msg = {
+      type: "SELECTION_CHANGED",
+      count
+    };
+    figma.ui.postMessage(msg);
+  });
+  var currentScanSessionId = 0;
+  function bytesToSvgString(bytes) {
+    try {
+      return new TextDecoder("utf-8").decode(bytes);
+    } catch {
+      let str = "";
+      for (let i = 0; i < bytes.length; i++) {
+        str += String.fromCharCode(bytes[i]);
+      }
+      return str;
+    }
+  }
+  async function streamIconPreviews(icons, sessionId) {
+    const PREVIEW_CHUNK_SIZE = 18;
+    for (let i = 0; i < icons.length; i += PREVIEW_CHUNK_SIZE) {
+      if (sessionId !== currentScanSessionId) return;
+      const chunk = icons.slice(i, i + PREVIEW_CHUNK_SIZE);
+      const previews = [];
+      await Promise.all(
+        chunk.map(async (item) => {
+          try {
+            const node = figma.getNodeById(item.id);
+            if (node) {
+              const bytes = await node.exportAsync({
+                format: "SVG",
+                svgIdAttribute: false,
+                svgOutlineText: true,
+                svgSimplifyStroke: true
+              });
+              previews.push({
+                id: item.id,
+                svg: bytesToSvgString(bytes)
+              });
+            }
+          } catch {
+          }
+        })
+      );
+      if (sessionId !== currentScanSessionId) return;
+      if (previews.length > 0) {
+        figma.ui.postMessage({
+          type: "ICON_PREVIEWS_CHUNK",
+          previews
+        });
+      }
+      await new Promise((resolve) => setTimeout(resolve, 15));
+    }
+  }
+  figma.ui.onmessage = async (msg) => {
+    try {
+      if (msg.type === "CLOSE_PLUGIN") {
+        figma.closePlugin();
+        return;
+      }
+      if (msg.type === "RESIZE_WINDOW") {
+        const w = Math.max(480, Math.min(2400, Math.round(msg.width)));
+        const h = Math.max(480, Math.min(1800, Math.round(msg.height)));
+        figma.ui.resize(w, h);
+        return;
+      }
+      if (msg.type === "SELECT_NODE") {
+        const node = figma.getNodeById(msg.id);
+        if (node) {
+          figma.currentPage.selection = [node];
+          figma.viewport.scrollAndZoomIntoView([node]);
+        }
+        return;
+      }
+      if (msg.type === "SCAN_PROJECT") {
+        currentScanSessionId++;
+        const thisSessionId = currentScanSessionId;
+        const { config } = msg;
+        let targetNodes = [];
+        const allIcons = [];
+        if (config.scope === "selection") {
+          targetNodes = [...figma.currentPage.selection];
+          if (targetNodes.length === 0) {
+            figma.ui.postMessage({
+              type: "ERROR",
+              message: "No layers selected. Please select frames or components to scan."
+            });
+            return;
+          }
+          allIcons.push(...scanForIcons(targetNodes, figma.currentPage.name, config));
+        } else if (config.scope === "page") {
+          targetNodes = [...figma.currentPage.children];
+          allIcons.push(...scanForIcons(targetNodes, figma.currentPage.name, config));
+        } else if (config.scope === "document") {
+          for (const page of figma.root.children) {
+            const pageIcons = scanForIcons(page.children, page.name, config);
+            allIcons.push(...pageIcons);
+            targetNodes.push(...page.children);
+          }
+        }
+        const colors = extractProjectColors(targetNodes);
+        const response = {
+          type: "SCAN_COMPLETE",
+          icons: allIcons,
+          colors
+        };
+        figma.ui.postMessage(response);
+        streamIconPreviews(allIcons, thisSessionId);
+      }
+      if (msg.type === "START_EXPORT") {
+        await processBatchExport(msg.request);
+      }
+    } catch (error) {
+      console.error("Plugin runtime error:", error);
+      figma.ui.postMessage({
+        type: "ERROR",
+        message: error?.message || "An unexpected error occurred during execution."
+      });
+    }
+  };
+})();
