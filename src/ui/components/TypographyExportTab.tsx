@@ -216,3 +216,4 @@ export const TypographyExportTab: React.FC<Props> = ({ typography, isScanning })
     </div>
   );
 };
+

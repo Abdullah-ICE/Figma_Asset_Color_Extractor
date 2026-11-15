@@ -123,3 +123,4 @@ export function extractProjectTypography(rootNodes: readonly SceneNode[]): Extra
     return b.usageCount - a.usageCount;
   });
 }
+
