@@ -72,14 +72,14 @@ const ZOOM_CONFIGS: Record<
   },
 };
 
-// Pastel terrain tones for organic map territories
-const TERRAIN_THEMES = [
-  { border: 'border-blue-400', bg: 'bg-blue-50/50', hover: 'hover:border-blue-600 hover:bg-blue-50/80', badge: 'bg-blue-100 text-blue-800' },
-  { border: 'border-emerald-400', bg: 'bg-emerald-50/50', hover: 'hover:border-emerald-600 hover:bg-emerald-50/80', badge: 'bg-emerald-100 text-emerald-800' },
-  { border: 'border-violet-400', bg: 'bg-violet-50/50', hover: 'hover:border-violet-600 hover:bg-violet-50/80', badge: 'bg-violet-100 text-violet-800' },
-  { border: 'border-amber-400', bg: 'bg-amber-50/50', hover: 'hover:border-amber-600 hover:bg-amber-50/80', badge: 'bg-amber-100 text-amber-800' },
-  { border: 'border-rose-400', bg: 'bg-rose-50/50', hover: 'hover:border-rose-600 hover:bg-rose-50/80', badge: 'bg-rose-100 text-rose-800' },
-  { border: 'border-cyan-400', bg: 'bg-cyan-50/50', hover: 'hover:border-cyan-600 hover:bg-cyan-50/80', badge: 'bg-cyan-100 text-cyan-800' },
+// Vibrant territory themes with polygon contour accents
+const POLYGON_THEMES = [
+  { stroke: '#3b82f6', fill: 'rgba(59, 130, 246, 0.04)', border: 'border-blue-500', badge: 'bg-blue-100 text-blue-900 border-blue-300' },
+  { stroke: '#10b981', fill: 'rgba(16, 185, 129, 0.04)', border: 'border-emerald-500', badge: 'bg-emerald-100 text-emerald-900 border-emerald-300' },
+  { stroke: '#8b5cf6', fill: 'rgba(139, 92, 246, 0.04)', border: 'border-purple-500', badge: 'bg-purple-100 text-purple-900 border-purple-300' },
+  { stroke: '#f59e0b', fill: 'rgba(245, 158, 11, 0.04)', border: 'border-amber-500', badge: 'bg-amber-100 text-amber-900 border-amber-300' },
+  { stroke: '#ec4899', fill: 'rgba(236, 72, 153, 0.04)', border: 'border-pink-500', badge: 'bg-pink-100 text-pink-900 border-pink-300' },
+  { stroke: '#06b6d4', fill: 'rgba(6, 182, 212, 0.04)', border: 'border-cyan-500', badge: 'bg-cyan-100 text-cyan-900 border-cyan-300' },
 ];
 
 export const IconExportTab: React.FC<Props> = ({
@@ -91,7 +91,7 @@ export const IconExportTab: React.FC<Props> = ({
   onExport,
   onSelectNode,
 }) => {
-  const [scope, setScope] = useState<ScanConfig['scope']>('document'); // Default document for multi-page grouping!
+  const [scope, setScope] = useState<ScanConfig['scope']>('document');
   const [maxDimension, setMaxDimension] = useState<number>(48);
   const [onlyComponents, setOnlyComponents] = useState<boolean>(false);
 
@@ -104,7 +104,7 @@ export const IconExportTab: React.FC<Props> = ({
   const [viewMode, setViewMode] = useState<'map' | 'grid' | 'list'>('map');
   const [zoomLevel, setZoomLevel] = useState<number>(2);
 
-  // Mouse-following cursor tooltip state for Map mode
+  // Real-time mouse-following floating tooltip
   const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(null);
   const [hoveredCluster, setHoveredCluster] = useState<{
     pageName: string;
@@ -227,7 +227,7 @@ export const IconExportTab: React.FC<Props> = ({
               onChange={e => setScope(e.target.value as any)}
               className="w-full bg-[var(--figma-color-bg,#ffffff)] text-[var(--figma-color-text,#111827)] border border-[var(--figma-color-border,#d1d5db)] rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
             >
-              <option value="document">Entire Project (All Pages - Recommended for Map View)</option>
+              <option value="document">Entire Project (All Pages - Multi-Page Scan)</option>
               <option value="page">Current Page Only</option>
               <option value="selection">
                 Current Selection {selectionCount > 0 ? `(${selectionCount} selected)` : ''}
@@ -366,44 +366,42 @@ export const IconExportTab: React.FC<Props> = ({
 
             <div className="flex items-center space-x-2">
               {/* Density Zoom Stepper */}
-              {(viewMode === 'grid' || viewMode === 'map') && (
-                <div
-                  className="flex items-center border border-gray-200 rounded px-1.5 py-0.5 bg-gray-100 space-x-1"
-                  title={`Density: ${currentZoom.label}`}
+              <div
+                className="flex items-center border border-gray-200 rounded px-1.5 py-0.5 bg-gray-100 space-x-1"
+                title={`Density: ${currentZoom.label}`}
+              >
+                <button
+                  onClick={() => setZoomLevel(prev => Math.max(1, prev - 1))}
+                  disabled={zoomLevel <= 1}
+                  title="Make icons smaller"
+                  className="w-4 h-4 flex items-center justify-center text-xs font-bold text-gray-600 hover:text-black disabled:opacity-30 rounded bg-white shadow-xs"
                 >
-                  <button
-                    onClick={() => setZoomLevel(prev => Math.max(1, prev - 1))}
-                    disabled={zoomLevel <= 1}
-                    title="Make icons smaller"
-                    className="w-4 h-4 flex items-center justify-center text-xs font-bold text-gray-600 hover:text-black disabled:opacity-30 rounded bg-white shadow-xs"
-                  >
-                    −
-                  </button>
+                  −
+                </button>
 
-                  <input
-                    type="range"
-                    min={1}
-                    max={6}
-                    step={1}
-                    value={zoomLevel}
-                    onChange={e => setZoomLevel(Number(e.target.value))}
-                    className="w-12 h-1 bg-gray-300 rounded cursor-pointer accent-blue-600"
-                  />
+                <input
+                  type="range"
+                  min={1}
+                  max={6}
+                  step={1}
+                  value={zoomLevel}
+                  onChange={e => setZoomLevel(Number(e.target.value))}
+                  className="w-12 h-1 bg-gray-300 rounded cursor-pointer accent-blue-600"
+                />
 
-                  <button
-                    onClick={() => setZoomLevel(prev => Math.min(6, prev + 1))}
-                    disabled={zoomLevel >= 6}
-                    title="Make icons larger"
-                    className="w-4 h-4 flex items-center justify-center text-xs font-bold text-gray-600 hover:text-black disabled:opacity-30 rounded bg-white shadow-xs"
-                  >
-                    +
-                  </button>
+                <button
+                  onClick={() => setZoomLevel(prev => Math.min(6, prev + 1))}
+                  disabled={zoomLevel >= 6}
+                  title="Make icons larger"
+                  className="w-4 h-4 flex items-center justify-center text-xs font-bold text-gray-600 hover:text-black disabled:opacity-30 rounded bg-white shadow-xs"
+                >
+                  +
+                </button>
 
-                  <span className="font-mono text-[9px] text-gray-600 font-semibold px-0.5">
-                    {zoomLevel === 1 ? 'Micro' : zoomLevel === 2 ? 'Tiny' : zoomLevel === 3 ? 'XS' : zoomLevel === 4 ? 'S' : zoomLevel === 5 ? 'M' : 'L'}
-                  </span>
-                </div>
-              )}
+                <span className="font-mono text-[9px] text-gray-600 font-semibold px-0.5">
+                  {zoomLevel === 1 ? 'Micro' : zoomLevel === 2 ? 'Tiny' : zoomLevel === 3 ? 'XS' : zoomLevel === 4 ? 'S' : zoomLevel === 5 ? 'M' : 'L'}
+                </span>
+              </div>
 
               <input
                 type="text"
@@ -417,7 +415,7 @@ export const IconExportTab: React.FC<Props> = ({
               <div className="flex border border-gray-200 rounded p-0.5 bg-gray-100">
                 <button
                   onClick={() => setViewMode('map')}
-                  title="Map View (Organic Territory Clusters & Floating Tooltips)"
+                  title="Map View: Unified Full-Width Grid Presentation with Polygon Contour Boundaries & Tooltip"
                   className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
                     viewMode === 'map'
                       ? 'bg-white shadow-xs text-blue-600 font-bold'
@@ -458,13 +456,13 @@ export const IconExportTab: React.FC<Props> = ({
               <div className="p-8 text-center text-xs text-gray-400">No matching assets found.</div>
             ) : viewMode === 'map' ? (
               /* ========================================================= */
-              /* 🗺️ MAP TERRITORY CLUSTER VIEW (User Requested Feature)    */
+              /* 🗺️ MAP VIEW: UNIFIED GRID PRESENTATION WITH POLYGON LINES */
               /* ========================================================= */
-              <div className="space-y-5">
+              <div className="space-y-4">
                 {Array.from(pageGroups.entries()).map(([pageName, screenMap], pageIdx) => (
-                  <div key={pageName} className="space-y-2.5">
-                    {/* Page Region Header */}
-                    <div className="flex items-center space-x-2 border-b border-gray-200 pb-1 pt-1">
+                  <div key={pageName} className="space-y-3">
+                    {/* Page Region Bar */}
+                    <div className="flex items-center space-x-2 border-b border-gray-200 pb-1 pt-0.5">
                       <span className="text-xs font-bold text-gray-800 flex items-center space-x-1">
                         <span>📄 Page:</span>
                         <span className="text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 font-mono">
@@ -476,10 +474,10 @@ export const IconExportTab: React.FC<Props> = ({
                       </span>
                     </div>
 
-                    {/* Organic Screen Clusters / Territories */}
-                    <div className="flex flex-wrap gap-3.5 items-start">
+                    {/* Unified Full-Width Groups with Polygon Boundaries */}
+                    <div className="space-y-3">
                       {Array.from(screenMap.entries()).map(([screenName, clusterIcons], screenIdx) => {
-                        const theme = TERRAIN_THEMES[(pageIdx + screenIdx) % TERRAIN_THEMES.length];
+                        const theme = POLYGON_THEMES[(pageIdx + screenIdx) % POLYGON_THEMES.length];
                         const isAllSelected = clusterIcons.every(i => selectedIds.has(i.id));
                         const isSomeSelected = clusterIcons.some(i => selectedIds.has(i.id));
 
@@ -495,16 +493,18 @@ export const IconExportTab: React.FC<Props> = ({
                             }
                             onMouseLeave={() => setHoveredCluster(null)}
                             style={{
-                              // Organic map-territory contour border (not a strict rectangle!)
-                              borderRadius: '22px 34px 24px 38px',
+                              // Chamfered / polygonal contour cut on corners (বহুভুজাকৃতির লাইন)
+                              clipPath:
+                                'polygon(12px 0%, calc(100% - 12px) 0%, 100% 12px, 100% calc(100% - 12px), calc(100% - 12px) 100%, 12px 100%, 0% calc(100% - 12px), 0% 12px)',
                             }}
-                            className={`relative border-2 border-dashed ${theme.border} ${theme.bg} ${theme.hover} p-2.5 transition-all shadow-xs flex flex-col`}
+                            className={`w-full relative border-2 border-dashed ${theme.border} p-3 transition-all duration-150 hover:shadow-md`}
+                            style-bg={{ backgroundColor: theme.fill }}
                           >
-                            {/* Territory Label Header Bar */}
-                            <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-gray-200/60 space-x-2">
+                            {/* Polygonal Header Toolbar */}
+                            <div className="flex items-center justify-between pb-2 mb-2 border-b border-gray-200/70">
                               <label
                                 onClick={e => e.stopPropagation()}
-                                className="flex items-center space-x-1.5 cursor-pointer"
+                                className="flex items-center space-x-2 cursor-pointer"
                               >
                                 <input
                                   type="checkbox"
@@ -513,29 +513,30 @@ export const IconExportTab: React.FC<Props> = ({
                                     if (el) el.indeterminate = !isAllSelected && isSomeSelected;
                                   }}
                                   onChange={() => handleToggleCluster(clusterIcons)}
-                                  className="rounded text-blue-600 focus:ring-blue-500 w-3 h-3"
+                                  className="rounded text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
                                 />
                                 <span
-                                  className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${theme.badge} max-w-[140px] truncate block`}
-                                  title={screenName}
+                                  className={`text-[11px] font-bold px-2 py-0.5 rounded border ${theme.badge} flex items-center space-x-1.5`}
+                                  style={{
+                                    clipPath: 'polygon(6px 0%, calc(100% - 6px) 0%, 100% 6px, 100% calc(100% - 6px), calc(100% - 6px) 100%, 6px 100%, 0% calc(100% - 6px), 0% 6px)',
+                                  }}
                                 >
-                                  🖥️ {screenName}
+                                  <span>🖥️ {screenName}</span>
                                 </span>
                               </label>
 
-                              <span className="text-[9px] font-mono text-gray-500 font-medium">
-                                {clusterIcons.length}
+                              <span className="text-[10px] font-mono text-gray-500 font-semibold bg-white/80 px-2 py-0.5 rounded border border-gray-200">
+                                {clusterIcons.length} assets
                               </span>
                             </div>
 
-                            {/* Dynamic Icon Flow (Size auto-adjusts based on icon count!) */}
+                            {/* UNIFIED FULL-WIDTH GRID PRESENTATION (Grid view er motoi) */}
                             <div
                               style={{
                                 display: 'grid',
                                 gridTemplateColumns: `repeat(auto-fill, minmax(${currentZoom.minWidth}px, 1fr))`,
                                 gap: zoomLevel <= 2 ? '4px' : '6px',
-                                minWidth: Math.min(380, Math.max(120, clusterIcons.length * (currentZoom.minWidth + 6))),
-                                maxWidth: '420px',
+                                width: '100%',
                               }}
                             >
                               {clusterIcons.map(icon => {
@@ -548,7 +549,7 @@ export const IconExportTab: React.FC<Props> = ({
                                     className={`group relative flex flex-col items-center justify-between ${currentZoom.padding} rounded-md border cursor-pointer transition-all ${
                                       isSelected
                                         ? 'border-blue-500 bg-white shadow-xs ring-1 ring-blue-500'
-                                        : 'border-gray-200 bg-white/70 opacity-60 hover:opacity-100 hover:border-gray-300'
+                                        : 'border-gray-200 bg-white/80 opacity-60 hover:opacity-100 hover:border-gray-300'
                                     }`}
                                     title={`${icon.name} (${icon.width}x${icon.height})`}
                                   >
@@ -611,6 +612,7 @@ export const IconExportTab: React.FC<Props> = ({
                   display: 'grid',
                   gridTemplateColumns: `repeat(auto-fill, minmax(${currentZoom.minWidth}px, 1fr))`,
                   gap: zoomLevel <= 2 ? '4px' : '6px',
+                  width: '100%',
                 }}
               >
                 {filteredIcons.map(icon => {
