@@ -4,6 +4,16 @@
 
 ---
 
+<p align="center">
+  <img src="./assets/screenshot-1.png" alt="Figma Asset & Color Extractor - Dashboard & Grid View" width="85%" />
+</p>
+
+<p align="center">
+  <img src="./assets/screenshot-2.png" alt="Figma Asset & Color Extractor - Map Territory Clusters View" width="85%" />
+</p>
+
+---
+
 ## ✨ Features
 
 - 🎯 **Smart Icon Auto-Detection**: Heuristically detects icons across selections, current pages, or multi-page documents by aspect ratio, dimension filters, vector-only layer checks, and component tags.
