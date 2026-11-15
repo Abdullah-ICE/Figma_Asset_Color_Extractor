@@ -147,47 +147,15 @@ export const App: React.FC = () => {
     window.addEventListener('mouseup', onMouseUp);
   };
 
-  const applyWindowPreset = (width: number, height: number) => {
-    postToPlugin({ type: 'RESIZE_WINDOW', width, height });
-  };
-
   return (
     <div className="relative flex flex-col h-screen bg-[var(--figma-color-bg,#ffffff)] text-[var(--figma-color-text,#111827)] font-sans antialiased text-xs select-none overflow-hidden">
       {/* Header */}
       <header className="px-3.5 py-2 border-b border-[var(--figma-color-border,#e5e7eb)] flex items-center justify-between flex-shrink-0 bg-white">
-        <div className="flex items-center space-x-2">
-          <div>
-            <h1 className="font-bold text-sm tracking-tight text-[var(--figma-color-text,#111827)]">
-              Asset &amp; Color Extractor
-            </h1>
-            <p className="text-[10px] text-gray-400">Icons, Colors &amp; Typography Tokens</p>
-          </div>
-
-          {/* Quick Window Size Presets */}
-          <div className="hidden sm:flex items-center space-x-1 pl-2 border-l border-gray-200 text-[10px]">
-            <span className="text-gray-400">Window:</span>
-            <button
-              onClick={() => applyWindowPreset(680, 720)}
-              className="px-1.5 py-0.5 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors"
-              title="Default Window (680x720)"
-            >
-              Default
-            </button>
-            <button
-              onClick={() => applyWindowPreset(880, 800)}
-              className="px-1.5 py-0.5 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors"
-              title="Medium Window (880x800)"
-            >
-              Medium
-            </button>
-            <button
-              onClick={() => applyWindowPreset(1120, 880)}
-              className="px-1.5 py-0.5 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors"
-              title="Wide Max View (1120x880)"
-            >
-              Wide
-            </button>
-          </div>
+        <div>
+          <h1 className="font-bold text-sm tracking-tight text-[var(--figma-color-text,#111827)]">
+            Asset &amp; Color Extractor
+          </h1>
+          <p className="text-[10px] text-gray-400">Icons, Colors &amp; Typography Tokens</p>
         </div>
 
         {/* Tab Switcher: Icons, Colors, Typography */}
