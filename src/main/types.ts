@@ -19,6 +19,19 @@ export interface ExtractedColor {
   source: 'style' | 'variable' | 'raw_node';
 }
 
+export interface ExtractedTypography {
+  id: string;
+  name?: string;
+  fontFamily: string;
+  fontStyle: string;
+  fontWeight: number;
+  fontSize: number;
+  lineHeight: string;
+  letterSpacing: string;
+  usageCount: number;
+  source: 'style' | 'raw_node';
+}
+
 export interface ScanConfig {
   scope: 'selection' | 'page' | 'document';
   maxDimension: number;
@@ -34,7 +47,12 @@ export interface ExportRequest {
 }
 
 export type PluginToUIMessage =
-  | { type: 'SCAN_COMPLETE'; icons: DetectedIcon[]; colors: ExtractedColor[] }
+  | {
+      type: 'SCAN_COMPLETE';
+      icons: DetectedIcon[];
+      colors: ExtractedColor[];
+      typography: ExtractedTypography[];
+    }
   | {
       type: 'ICON_PREVIEWS_CHUNK';
       previews: { id: string; svg: string }[];

@@ -3,6 +3,7 @@ import {
   DetectedIcon,
   ExportRequest,
   ExtractedColor,
+  ExtractedTypography,
   PluginToUIMessage,
   ScanConfig,
   UIToPluginMessage,
@@ -10,12 +11,14 @@ import {
 import { ColorExportTab } from './components/ColorExportTab';
 import { ExportProgressBar } from './components/ExportProgressBar';
 import { IconExportTab } from './components/IconExportTab';
+import { TypographyExportTab } from './components/TypographyExportTab';
 import { ZipArchiver } from './utils/zipArchiver';
 
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'icons' | 'colors'>('icons');
+  const [activeTab, setActiveTab] = useState<'icons' | 'colors' | 'typography'>('icons');
   const [icons, setIcons] = useState<DetectedIcon[]>([]);
   const [colors, setColors] = useState<ExtractedColor[]>([]);
+  const [typography, setTypography] = useState<ExtractedTypography[]>([]);
   const [selectionCount, setSelectionCount] = useState<number>(0);
 
   const [isScanning, setIsScanning] = useState<boolean>(false);
@@ -47,6 +50,9 @@ export const App: React.FC = () => {
       if (msg.type === 'SCAN_COMPLETE') {
         setIcons(msg.icons);
         setColors(msg.colors);
+        if ('typography' in msg && Array.isArray(msg.typography)) {
+          setTypography(msg.typography);
+        }
         setIsScanning(false);
         setErrorMessage(null);
       }
@@ -119,7 +125,6 @@ export const App: React.FC = () => {
     postToPlugin({ type: 'SELECT_NODE', id });
   };
 
-  // Drag-to-resize window handler
   const handleResizeMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     const startX = e.clientX;
@@ -155,57 +160,67 @@ export const App: React.FC = () => {
             <h1 className="font-bold text-sm tracking-tight text-[var(--figma-color-text,#111827)]">
               Asset &amp; Color Extractor
             </h1>
-            <p className="text-[10px] text-gray-400">Visual icon selector &amp; design tokens</p>
+            <p className="text-[10px] text-gray-400">Icons, Colors &amp; Typography Tokens</p>
           </div>
 
-          {/* Quick Window Size Preset Buttons */}
+          {/* Quick Window Size Presets */}
           <div className="hidden sm:flex items-center space-x-1 pl-2 border-l border-gray-200 text-[10px]">
             <span className="text-gray-400">Window:</span>
             <button
-              onClick={() => applyWindowPreset(640, 700)}
+              onClick={() => applyWindowPreset(680, 720)}
               className="px-1.5 py-0.5 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors"
-              title="Compact Window (640x700)"
+              title="Default Window (680x720)"
             >
               Default
             </button>
             <button
-              onClick={() => applyWindowPreset(840, 800)}
+              onClick={() => applyWindowPreset(880, 800)}
               className="px-1.5 py-0.5 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors"
-              title="Medium Window (840x800)"
+              title="Medium Window (880x800)"
             >
               Medium
             </button>
             <button
-              onClick={() => applyWindowPreset(1080, 880)}
+              onClick={() => applyWindowPreset(1120, 880)}
               className="px-1.5 py-0.5 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors"
-              title="Wide Max View (1080x880)"
+              title="Wide Max View (1120x880)"
             >
               Wide
             </button>
           </div>
         </div>
 
-        {/* Tab Switcher */}
+        {/* Tab Switcher: Icons, Colors, Typography */}
         <div className="flex bg-[var(--figma-color-bg-secondary,#f3f4f6)] p-0.5 rounded-lg border border-[var(--figma-color-border,#e5e7eb)]">
           <button
             onClick={() => setActiveTab('icons')}
-            className={`px-3 py-1 rounded-md font-medium text-xs transition-colors ${
+            className={`px-2.5 py-1 rounded-md font-medium text-xs transition-colors ${
               activeTab === 'icons'
-                ? 'bg-[var(--figma-color-bg,#ffffff)] shadow-sm text-blue-600'
+                ? 'bg-[var(--figma-color-bg,#ffffff)] shadow-sm text-blue-600 font-bold'
                 : 'text-gray-500 hover:text-gray-900'
             }`}
           >
-            Icons &amp; Vectors {icons.length > 0 && `(${icons.length})`}
+            Icons {icons.length > 0 && `(${icons.length})`}
           </button>
           <button
             onClick={() => setActiveTab('colors')}
-            className={`px-3 py-1 rounded-md font-medium text-xs transition-colors ${
+            className={`px-2.5 py-1 rounded-md font-medium text-xs transition-colors ${
               activeTab === 'colors'
-                ? 'bg-[var(--figma-color-bg,#ffffff)] shadow-sm text-blue-600'
+                ? 'bg-[var(--figma-color-bg,#ffffff)] shadow-sm text-blue-600 font-bold'
                 : 'text-gray-500 hover:text-gray-900'
             }`}
           >
-            Color Palette {colors.length > 0 && `(${colors.length})`}
+            Colors {colors.length > 0 && `(${colors.length})`}
+          </button>
+          <button
+            onClick={() => setActiveTab('typography')}
+            className={`px-2.5 py-1 rounded-md font-medium text-xs transition-colors ${
+              activeTab === 'typography'
+                ? 'bg-[var(--figma-color-bg,#ffffff)] shadow-sm text-blue-600 font-bold'
+                : 'text-gray-500 hover:text-gray-900'
+            }`}
+          >
+            Typography {typography.length > 0 && `(${typography.length})`}
           </button>
         </div>
       </header>
@@ -245,15 +260,17 @@ export const App: React.FC = () => {
               onExport={handleExport}
               onSelectNode={handleSelectNode}
             />
-          ) : (
+          ) : activeTab === 'colors' ? (
             <ColorExportTab colors={colors} isScanning={isScanning} />
+          ) : (
+            <TypographyExportTab typography={typography} isScanning={isScanning} />
           )}
         </div>
       </main>
 
       {/* Footer */}
       <footer className="px-3 py-1.5 border-t border-[var(--figma-color-border,#e5e7eb)] flex justify-between items-center text-[10px] text-gray-400 bg-[var(--figma-color-bg-secondary,#fafafa)] flex-shrink-0">
-        <span>Figma Asset &amp; Color Extractor v1.2 • Drag corner ↘ to resize</span>
+        <span>Figma Asset, Color &amp; Typography Extractor • Drag corner ↘ to resize</span>
         <button
           onClick={() => postToPlugin({ type: 'CLOSE_PLUGIN' })}
           className="hover:text-gray-700 underline pr-4"
@@ -262,7 +279,7 @@ export const App: React.FC = () => {
         </button>
       </footer>
 
-      {/* Interactive Drag Resize Handle (Bottom-Right Corner) */}
+      {/* Drag Resize Handle */}
       <div
         onMouseDown={handleResizeMouseDown}
         className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize flex items-end justify-end p-0.5 text-gray-400 hover:text-blue-600 transition-colors z-50"

@@ -215,6 +215,115 @@
     });
   }
 
+  // src/main/typographyExtractor.ts
+  function parseFontWeight(style) {
+    const s = style.toLowerCase();
+    if (s.includes("thin") || s.includes("hairline")) return 100;
+    if (s.includes("extralight") || s.includes("ultra light") || s.includes("extra light")) return 200;
+    if (s.includes("light")) return 300;
+    if (s.includes("medium")) return 500;
+    if (s.includes("semibold") || s.includes("semi bold") || s.includes("demibold")) return 600;
+    if (s.includes("extrabold") || s.includes("ultra bold") || s.includes("extra bold")) return 800;
+    if (s.includes("black") || s.includes("heavy")) return 900;
+    if (s.includes("bold")) return 700;
+    return 400;
+  }
+  function formatLineHeight(lh) {
+    if (!lh || lh === figma.mixed) return "normal";
+    if (lh.unit === "AUTO") return "normal";
+    if (lh.unit === "PERCENT") return `${Math.round(lh.value)}%`;
+    return `${Math.round(lh.value)}px`;
+  }
+  function formatLetterSpacing(ls) {
+    if (!ls || ls === figma.mixed) return "normal";
+    if (ls.unit === "PERCENT") return `${Math.round(ls.value)}%`;
+    return `${Number(ls.value.toFixed(2))}px`;
+  }
+  function extractProjectTypography(rootNodes) {
+    const typoMap = /* @__PURE__ */ new Map();
+    try {
+      const textStyles = figma.getLocalTextStyles();
+      for (const style of textStyles) {
+        if (style.fontName && typeof style.fontName === "object" && "family" in style.fontName) {
+          const fontName = style.fontName;
+          const fontSize = Math.round(style.fontSize);
+          const key = `${fontName.family}-${fontName.style}-${fontSize}`;
+          typoMap.set(key, {
+            id: style.id,
+            name: style.name,
+            fontFamily: fontName.family,
+            fontStyle: fontName.style,
+            fontWeight: parseFontWeight(fontName.style),
+            fontSize,
+            lineHeight: formatLineHeight(style.lineHeight),
+            letterSpacing: formatLetterSpacing(style.letterSpacing),
+            usageCount: 0,
+            source: "style"
+          });
+        }
+      }
+    } catch (err) {
+      console.warn("Could not read local text styles:", err);
+    }
+    function walk(node) {
+      if (!node.visible) return;
+      if (node.type === "TEXT") {
+        const textNode = node;
+        let fontName = null;
+        let fontSize = 16;
+        if (textNode.fontName !== figma.mixed) {
+          fontName = textNode.fontName;
+        } else if (textNode.characters.length > 0) {
+          try {
+            const fn = textNode.getRangeFontName(0, 1);
+            if (fn !== figma.mixed) fontName = fn;
+          } catch {
+          }
+        }
+        if (textNode.fontSize !== figma.mixed) {
+          fontSize = Math.round(textNode.fontSize);
+        } else if (textNode.characters.length > 0) {
+          try {
+            const fs = textNode.getRangeFontSize(0, 1);
+            if (typeof fs === "number") fontSize = Math.round(fs);
+          } catch {
+          }
+        }
+        if (fontName && typeof fontName === "object" && fontName.family) {
+          const key = `${fontName.family}-${fontName.style}-${fontSize}`;
+          const existing = typoMap.get(key);
+          if (existing) {
+            existing.usageCount++;
+          } else {
+            typoMap.set(key, {
+              id: textNode.id,
+              fontFamily: fontName.family,
+              fontStyle: fontName.style,
+              fontWeight: parseFontWeight(fontName.style),
+              fontSize,
+              lineHeight: formatLineHeight(textNode.lineHeight),
+              letterSpacing: formatLetterSpacing(textNode.letterSpacing),
+              usageCount: 1,
+              source: "raw_node"
+            });
+          }
+        }
+      }
+      if ("children" in node) {
+        for (const child of node.children) {
+          walk(child);
+        }
+      }
+    }
+    for (const root of rootNodes) {
+      walk(root);
+    }
+    return Array.from(typoMap.values()).sort((a, b) => {
+      if (b.fontSize !== a.fontSize) return b.fontSize - a.fontSize;
+      return b.usageCount - a.usageCount;
+    });
+  }
+
   // src/main/exportEngine.ts
   function sanitizePathSegment(segment) {
     return segment.replace(/[/\\?%*:|"<>]/g, "-").replace(/\s+/g, " ").trim();
@@ -320,10 +429,10 @@
 
   // src/main/code.ts
   figma.showUI(__html__, {
-    width: 680,
-    height: 720,
+    width: 720,
+    height: 740,
     themeColors: true,
-    title: "Asset & Color Extractor"
+    title: "Asset, Color & Typography Extractor"
   });
   figma.on("selectionchange", () => {
     const count = figma.currentPage.selection.length;
@@ -388,8 +497,8 @@
         return;
       }
       if (msg.type === "RESIZE_WINDOW") {
-        const w = Math.max(480, Math.min(2400, Math.round(msg.width)));
-        const h = Math.max(480, Math.min(1800, Math.round(msg.height)));
+        const w = Math.max(500, Math.min(2400, Math.round(msg.width)));
+        const h = Math.max(500, Math.min(1800, Math.round(msg.height)));
         figma.ui.resize(w, h);
         return;
       }
@@ -428,10 +537,12 @@
           }
         }
         const colors = extractProjectColors(targetNodes);
+        const typography = extractProjectTypography(targetNodes);
         const response = {
           type: "SCAN_COMPLETE",
           icons: allIcons,
-          colors
+          colors,
+          typography
         };
         figma.ui.postMessage(response);
         streamIconPreviews(allIcons, thisSessionId);

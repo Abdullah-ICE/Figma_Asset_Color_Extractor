@@ -40,6 +40,11 @@
   - Extracts Figma Local Paint Styles & Variables.
   - Scans raw node fills & strokes, computing exact usage frequency counts.
   - Exports directly as **CSS Custom Properties (`:root`)**, **Tailwind CSS (`tailwind.config.js`)**, **SCSS**, or **W3C Design Tokens JSON**.
+- 🔤 **Typography & Font Style/Size Extractor**:
+  - Auto-extracts all unique font families, font styles, numeric font weights (100 to 900), and font sizes.
+  - Reads both Figma Local Text Styles and all canvas text layers with exact usage frequency counts.
+  - Visual interactive font scale ladder with editable live sample preview text.
+  - Exports design tokens directly as **CSS (`--font-size-*`, `--font-*`)**, **Tailwind (`theme.extend.fontFamily`, `fontSize`)**, **SCSS**, and **W3C Design Tokens JSON**.
 
 ---
 
@@ -112,7 +117,20 @@ Inside any design file:
 
 ---
 
-## ❓ Troubleshooting & FAQs
+### Tab 3: Typography & Font Styles Workflow
+
+1. Switch to the **Typography** tab at the top of the plugin window.
+2. View all extracted typography styles:
+   - Primary **Font Families** (e.g. `Inter`, `Roboto`, `Plus Jakarta Sans`).
+   - All unique **Font Sizes** ($12\text{px}$ to $64\text{px}+$).
+   - Exact numeric **Font Weights** (100 to 900, Bold, SemiBold, Medium, Regular).
+   - Line height, letter spacing, and exact usage frequency counts.
+   - Interactive live sample preview text with custom typing.
+3. **Export Typography Tokens**:
+   - Choose your framework format: **CSS**, **Tailwind**, **SCSS**, or **JSON**.
+   - Click **Copy** or **Download File** to immediately save typography tokens into your project.
+
+---
 
 ### Q1: The plugin window doesn't open when clicking in Figma?
 - **Ensure you are in Design Mode**: If you are in Figma **Dev Mode** (green badge/header), press **`Shift + D`** to toggle back to standard Design Mode. Modal UI plugins cannot run in Dev Mode.

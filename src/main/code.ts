@@ -1,14 +1,15 @@
 import { scanForIcons } from './iconDetector';
 import { extractProjectColors } from './colorExtractor';
+import { extractProjectTypography } from './typographyExtractor';
 import { processBatchExport } from './exportEngine';
 import { DetectedIcon, PluginToUIMessage, UIToPluginMessage } from './types';
 
-// Show the plugin dialog with default comfortable size
+// Show the plugin dialog with comfortable size
 figma.showUI(__html__, {
-  width: 680,
-  height: 720,
+  width: 720,
+  height: 740,
   themeColors: true,
-  title: 'Asset & Color Extractor',
+  title: 'Asset, Color & Typography Extractor',
 });
 
 // Broadcast selection changes to UI
@@ -87,8 +88,8 @@ figma.ui.onmessage = async (msg: UIToPluginMessage) => {
     }
 
     if (msg.type === 'RESIZE_WINDOW') {
-      const w = Math.max(480, Math.min(2400, Math.round(msg.width)));
-      const h = Math.max(480, Math.min(1800, Math.round(msg.height)));
+      const w = Math.max(500, Math.min(2400, Math.round(msg.width)));
+      const h = Math.max(500, Math.min(1800, Math.round(msg.height)));
       figma.ui.resize(w, h);
       return;
     }
@@ -131,13 +132,15 @@ figma.ui.onmessage = async (msg: UIToPluginMessage) => {
         }
       }
 
-      // Extract colors from scanned nodes
+      // Extract colors & typography from scanned nodes
       const colors = extractProjectColors(targetNodes);
+      const typography = extractProjectTypography(targetNodes);
 
       const response: PluginToUIMessage = {
         type: 'SCAN_COMPLETE',
         icons: allIcons,
         colors,
+        typography,
       };
       figma.ui.postMessage(response);
 
