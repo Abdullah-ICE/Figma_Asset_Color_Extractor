@@ -45,7 +45,17 @@
   - Reads both Figma Local Text Styles and all canvas text layers with exact usage frequency counts.
   - Visual interactive font scale ladder with editable live sample preview text.
   - Exports design tokens directly as **CSS (`--font-size-*`, `--font-*`)**, **Tailwind (`theme.extend.fontFamily`, `fontSize`)**, **SCSS**, and **W3C Design Tokens JSON**.
-- 🧩 **Exact Identical Component Detection & UI Inventory (Tab 4)**:
+- ✨ **Smart Deduplicated Unique Icons (Zero Redundancy)**:
+  - Collapses repeating icons across screens into a clean canonical **Unique Icons Pack** (e.g., 631 instances $\rightarrow$ 64 unique icons).
+  - Shows occurrence badges (e.g. `Used 24x across screens`) with dropdown inspecting exact screen locations.
+  - Three switchable view modes: **`✨ Unique Icons`**, **`🗺️ Screen Map`**, and **`🔲 Grid`**.
+  - **Zero Duplicate Bloat**: Exports only 1 canonical copy per icon, eliminating redundant duplicate files in your ZIP!
+- 🎥 **Media & Embedded Files Manager (MP4, Lottie JSON, Images)**:
+  - Scans and detects **MP4 Videos** (`VIDEO` fills), **Lottie Animations** (JSON plugin data), and **High-Res Images**.
+  - Shows dimensions, estimated file sizes, page, and parent screen names.
+  - **Batch Download**: One-click download of all selected media files into a structured ZIP (`.mp4`, `.json`, `.png`).
+  - **Canvas Clean-up (`🗑️ Delete from Canvas`)**: Permanently remove heavy or unused media layers directly from Figma canvas to keep project files lightweight and fast.
+- 🧩 **Exact Identical Component Detection & UI Inventory (Tab 5)**:
   - Scans entire project to group **100% identical repeating UI components** (**Buttons, Cards, Input Fields, Badges, Chips, Avatars, Row Items**).
   - **Zero Tolerance (Same-to-Same)**: Every instance in a group strictly matches in **Exact Dimensions ($W \times H$)**, **Exact Corner Radius**, **Exact Background Colors**, **Exact Borders/Strokes**, and **Exact AutoLayout/Padding**.
   - Filters strictly for components with **occurrences $\ge 2$** (repeated clones across screens).

@@ -32,6 +32,23 @@ export class ZipArchiver {
     this.zip.file(finalPath, uint8);
   }
 
+  public addRawFile(path: string, bytes: number[] | Uint8Array) {
+    let finalPath = path;
+    let counter = 1;
+    const dotIdx = path.lastIndexOf('.');
+    const base = dotIdx !== -1 ? path.slice(0, dotIdx) : path;
+    const ext = dotIdx !== -1 ? path.slice(dotIdx) : '';
+
+    while (this.usedPaths.has(finalPath.toLowerCase())) {
+      finalPath = `${base}-${counter}${ext}`;
+      counter++;
+    }
+
+    this.usedPaths.add(finalPath.toLowerCase());
+    const uint8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    this.zip.file(finalPath, uint8);
+  }
+
   public async downloadZip(onStatusUpdate?: (status: string) => void): Promise<void> {
     if (onStatusUpdate) onStatusUpdate(`Compressing ${this.usedPaths.size} files into ZIP...`);
     const blob = await this.zip.generateAsync({

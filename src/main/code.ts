@@ -1,9 +1,10 @@
 import { scanForIcons } from './iconDetector';
+import { scanForMedia } from './mediaDetector';
 import { extractProjectColors } from './colorExtractor';
 import { extractProjectTypography } from './typographyExtractor';
 import { auditProjectComponents } from './componentAuditor';
 import { processBatchExport } from './exportEngine';
-import { ComponentCluster, DetectedIcon, PluginToUIMessage, UIToPluginMessage } from './types';
+import { ComponentCluster, DetectedIcon, DetectedMedia, PluginToUIMessage, UIToPluginMessage } from './types';
 
 // Show the plugin dialog with comfortable size
 figma.showUI(__html__, {
@@ -185,6 +186,91 @@ figma.ui.onmessage = async (msg: UIToPluginMessage) => {
       return;
     }
 
+    if (msg.type === 'DELETE_NODES') {
+      let count = 0;
+      for (const id of msg.ids) {
+        const node = figma.getNodeById(id);
+        if (node && !node.removed) {
+          try {
+            node.remove();
+            count++;
+          } catch {}
+        }
+      }
+      figma.notify(`🗑️ Deleted ${count} item(s) from canvas!`, { timeout: 2500 });
+      figma.ui.postMessage({ type: 'NODES_DELETED', ids: msg.ids });
+      return;
+    }
+
+    if (msg.type === 'EXPORT_MEDIA') {
+      const ids = msg.ids;
+      for (let i = 0; i < ids.length; i++) {
+        const id = ids[i];
+        const node = figma.getNodeById(id) as (GeometryMixin & SceneNode) | null;
+        if (!node) continue;
+
+        let bytes: Uint8Array | null = null;
+        let filename = `${node.name || 'media'}.png`;
+
+        if ('fills' in node && Array.isArray(node.fills)) {
+          for (const fill of node.fills) {
+            if (fill.type === 'VIDEO' && fill.videoHash) {
+              const video = figma.getVideoByHash(fill.videoHash);
+              if (video) {
+                bytes = await video.getBytesAsync();
+                filename = `${node.name || 'video'}.mp4`;
+                break;
+              }
+            } else if (fill.type === 'IMAGE' && fill.imageHash) {
+              const image = figma.getImageByHash(fill.imageHash);
+              if (image) {
+                bytes = await image.getBytesAsync();
+                filename = `${node.name || 'image'}.png`;
+                break;
+              }
+            }
+          }
+        }
+
+        if (!bytes) {
+          try {
+            const keys = node.getPluginDataKeys();
+            for (const key of keys) {
+              const val = node.getPluginData(key);
+              if (val && val.startsWith('{')) {
+                bytes = new TextEncoder().encode(val);
+                filename = `${node.name || 'animation'}.json`;
+                break;
+              }
+            }
+          } catch {}
+        }
+
+        if (!bytes) {
+          bytes = await node.exportAsync({ format: 'PNG', constraint: { type: 'SCALE', value: 2 } });
+          filename = `${node.name || 'asset'}.png`;
+        }
+
+        if (bytes) {
+          figma.ui.postMessage({
+            type: 'MEDIA_EXPORT_CHUNK',
+            current: i + 1,
+            total: ids.length,
+            item: {
+              id,
+              name: node.name,
+              filename: filename.replace(/[/\\?%*:|"<>]/g, '-'),
+              bytes: Array.from(bytes),
+            },
+          });
+        }
+        await new Promise((r) => setTimeout(r, 20));
+      }
+
+      figma.ui.postMessage({ type: 'MEDIA_EXPORT_COMPLETE' });
+      return;
+    }
+
     if (msg.type === 'SCAN_PROJECT') {
       currentScanSessionId++;
       const thisSessionId = currentScanSessionId;
@@ -192,6 +278,7 @@ figma.ui.onmessage = async (msg: UIToPluginMessage) => {
       const { config } = msg;
       let targetNodes: SceneNode[] = [];
       const allIcons: DetectedIcon[] = [];
+      const allMedia: DetectedMedia[] = [];
 
       if (config.scope === 'selection') {
         targetNodes = [...figma.currentPage.selection];
@@ -203,13 +290,16 @@ figma.ui.onmessage = async (msg: UIToPluginMessage) => {
           return;
         }
         allIcons.push(...scanForIcons(targetNodes, figma.currentPage.name, config));
+        allMedia.push(...scanForMedia(targetNodes, figma.currentPage.name));
       } else if (config.scope === 'page') {
         targetNodes = [...figma.currentPage.children];
         allIcons.push(...scanForIcons(targetNodes, figma.currentPage.name, config));
+        allMedia.push(...scanForMedia(targetNodes, figma.currentPage.name));
       } else if (config.scope === 'document') {
         for (const page of figma.root.children) {
           const pageIcons = scanForIcons(page.children, page.name, config);
           allIcons.push(...pageIcons);
+          allMedia.push(...scanForMedia(page.children, page.name));
           targetNodes.push(...page.children);
         }
       }
@@ -225,6 +315,7 @@ figma.ui.onmessage = async (msg: UIToPluginMessage) => {
         colors,
         typography,
         components,
+        media: allMedia,
       };
       figma.ui.postMessage(response);
 

@@ -8,7 +8,37 @@ export interface DetectedIcon {
   parentPath: string; // Hierarchical path (e.g., "Icons / Action")
   slashPath: string;  // Extracted from slash naming (e.g., "Action / Delete")
   type: string;       // COMPONENT, INSTANCE, FRAME, etc.
+  componentKey?: string; // If instance, the master component key/id
+  dedupKey?: string;     // Unique identifier for clustering identical icons
   svgPreview?: string;
+}
+
+export interface DeduplicatedIconGroup {
+  dedupKey: string;
+  canonicalName: string;
+  representativeId: string;
+  width: number;
+  height: number;
+  totalOccurrences: number;
+  instances: DetectedIcon[];
+  svgPreview?: string;
+}
+
+export type MediaType = 'video_mp4' | 'lottie_json' | 'image' | 'other';
+
+export interface DetectedMedia {
+  id: string;
+  name: string;
+  mediaType: MediaType;
+  format: string; // 'mp4', 'json', 'png', 'jpg', 'gif', etc.
+  width: number;
+  height: number;
+  pageName: string;
+  screenName: string;
+  sizeEstimate?: string;
+  videoHash?: string;
+  imageHash?: string;
+  lottieJsonString?: string;
 }
 
 export interface ExtractedColor {
@@ -99,6 +129,7 @@ export type PluginToUIMessage =
       colors: ExtractedColor[];
       typography: ExtractedTypography[];
       components: ComponentCluster[];
+      media: DetectedMedia[];
     }
   | {
       type: 'ICON_PREVIEWS_CHUNK';
@@ -115,12 +146,22 @@ export type PluginToUIMessage =
       item: { id: string; name: string; relativePath: string; bytes: number[] };
     }
   | { type: 'EXPORT_COMPLETE' }
+  | {
+      type: 'MEDIA_EXPORT_CHUNK';
+      current: number;
+      total: number;
+      item: { id: string; name: string; filename: string; bytes: number[] };
+    }
+  | { type: 'MEDIA_EXPORT_COMPLETE' }
+  | { type: 'NODES_DELETED'; ids: string[] }
   | { type: 'ERROR'; message: string }
   | { type: 'SELECTION_CHANGED'; count: number };
 
 export type UIToPluginMessage =
   | { type: 'SCAN_PROJECT'; config: ScanConfig }
   | { type: 'START_EXPORT'; request: ExportRequest }
+  | { type: 'EXPORT_MEDIA'; ids: string[] }
+  | { type: 'DELETE_NODES'; ids: string[] }
   | { type: 'CLOSE_PLUGIN' }
   | { type: 'SELECT_NODE'; id: string }
   | { type: 'COPY_NODE_TO_CANVAS'; id: string }

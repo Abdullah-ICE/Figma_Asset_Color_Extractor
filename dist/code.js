@@ -72,16 +72,30 @@
       if (visited.has(node.id)) return;
       visited.add(node.id);
       if (isIconCandidate(node, config)) {
+        let componentKey = "";
+        if (node.type === "INSTANCE") {
+          const inst = node;
+          componentKey = inst.mainComponent?.key || inst.mainComponent?.id || "";
+        } else if (node.type === "COMPONENT") {
+          const comp = node;
+          componentKey = comp.key || comp.id;
+        }
+        const w = Math.round(node.width);
+        const h = Math.round(node.height);
+        const normName = node.name.toLowerCase().replace(/[^a-z0-9_-]/g, "").trim() || "icon";
+        const dedupKey = componentKey ? `comp_${componentKey}` : `shape_${normName}_${w}x${h}`;
         icons.push({
           id: node.id,
           name: node.name,
-          width: Math.round(node.width),
-          height: Math.round(node.height),
+          width: w,
+          height: h,
           pageName,
           screenName: getTopLevelScreenName(node),
           parentPath: buildHierarchyPath(node),
           slashPath: node.name.includes("/") ? node.name : "",
-          type: node.type
+          type: node.type,
+          componentKey: componentKey || void 0,
+          dedupKey
         });
         return;
       }
@@ -95,6 +109,116 @@
       traverse(root);
     }
     return icons;
+  }
+
+  // src/main/mediaDetector.ts
+  function getTopLevelScreenName2(node) {
+    let curr = node;
+    let topScreen = node.name;
+    while (curr && curr.parent && curr.parent.type !== "PAGE" && curr.parent.type !== "DOCUMENT") {
+      curr = curr.parent;
+      if ("name" in curr) {
+        topScreen = curr.name;
+      }
+    }
+    return topScreen;
+  }
+  function scanForMedia(rootNodes, pageName) {
+    const mediaList = [];
+    const visited = /* @__PURE__ */ new Set();
+    function traverse(node) {
+      if (!node.visible || visited.has(node.id)) return;
+      visited.add(node.id);
+      let detectedAsMedia = false;
+      if ("fills" in node && Array.isArray(node.fills)) {
+        for (const fill of node.fills) {
+          if (fill.type === "VIDEO" && fill.visible !== false && fill.videoHash) {
+            mediaList.push({
+              id: node.id,
+              name: node.name || "Video",
+              mediaType: "video_mp4",
+              format: "mp4",
+              width: Math.round(node.width),
+              height: Math.round(node.height),
+              pageName,
+              screenName: getTopLevelScreenName2(node),
+              videoHash: fill.videoHash,
+              sizeEstimate: "MP4 Video"
+            });
+            detectedAsMedia = true;
+            break;
+          }
+        }
+      }
+      if (!detectedAsMedia) {
+        let isLottie = false;
+        let lottieJsonStr = "";
+        try {
+          const keys = node.getPluginDataKeys();
+          for (const key of keys) {
+            const lk = key.toLowerCase();
+            if (lk.includes("lottie") || lk.includes("animation") || lk.includes("json")) {
+              const val = node.getPluginData(key);
+              if (val && val.startsWith("{")) {
+                isLottie = true;
+                lottieJsonStr = val;
+                break;
+              }
+            }
+          }
+        } catch {
+        }
+        const lowerName = node.name.toLowerCase();
+        if (!isLottie && (lowerName.endsWith(".json") || lowerName.includes("lottie"))) {
+          isLottie = true;
+        }
+        if (isLottie) {
+          mediaList.push({
+            id: node.id,
+            name: node.name.replace(/\.json$/i, ""),
+            mediaType: "lottie_json",
+            format: "json",
+            width: Math.round(node.width),
+            height: Math.round(node.height),
+            pageName,
+            screenName: getTopLevelScreenName2(node),
+            lottieJsonString: lottieJsonStr || void 0,
+            sizeEstimate: "Lottie JSON"
+          });
+          detectedAsMedia = true;
+        }
+      }
+      if (!detectedAsMedia && "fills" in node && Array.isArray(node.fills)) {
+        const isLargeEnough = node.width >= 56 && node.height >= 56;
+        for (const fill of node.fills) {
+          if (fill.type === "IMAGE" && fill.visible !== false && fill.imageHash && isLargeEnough) {
+            mediaList.push({
+              id: node.id,
+              name: node.name || "Image",
+              mediaType: "image",
+              format: "png",
+              width: Math.round(node.width),
+              height: Math.round(node.height),
+              pageName,
+              screenName: getTopLevelScreenName2(node),
+              imageHash: fill.imageHash,
+              sizeEstimate: `${Math.round(node.width)}x${Math.round(node.height)}px`
+            });
+            detectedAsMedia = true;
+            break;
+          }
+        }
+      }
+      if ("children" in node && node.type !== "BOOLEAN_OPERATION") {
+        for (const child of node.children) {
+          traverse(child);
+        }
+      }
+    }
+    for (const root of rootNodes) {
+      traverse(root);
+    }
+    return mediaList;
   }
 
   // src/main/colorExtractor.ts
@@ -348,7 +472,7 @@
     if (s.includes("bold")) return 700;
     return 400;
   }
-  function getTopLevelScreenName2(node) {
+  function getTopLevelScreenName3(node) {
     let curr = node;
     let topScreen = node.name;
     while (curr && curr.parent && curr.parent.type !== "PAGE" && curr.parent.type !== "DOCUMENT") {
@@ -497,7 +621,7 @@
               nodeId: frame.id,
               name: frame.name,
               pageName,
-              screenName: getTopLevelScreenName2(frame),
+              screenName: getTopLevelScreenName3(frame),
               properties: props
             },
             category,
@@ -848,12 +972,92 @@
         }
         return;
       }
+      if (msg.type === "DELETE_NODES") {
+        let count = 0;
+        for (const id of msg.ids) {
+          const node = figma.getNodeById(id);
+          if (node && !node.removed) {
+            try {
+              node.remove();
+              count++;
+            } catch {
+            }
+          }
+        }
+        figma.notify(`\u{1F5D1}\uFE0F Deleted ${count} item(s) from canvas!`, { timeout: 2500 });
+        figma.ui.postMessage({ type: "NODES_DELETED", ids: msg.ids });
+        return;
+      }
+      if (msg.type === "EXPORT_MEDIA") {
+        const ids = msg.ids;
+        for (let i = 0; i < ids.length; i++) {
+          const id = ids[i];
+          const node = figma.getNodeById(id);
+          if (!node) continue;
+          let bytes = null;
+          let filename = `${node.name || "media"}.png`;
+          if ("fills" in node && Array.isArray(node.fills)) {
+            for (const fill of node.fills) {
+              if (fill.type === "VIDEO" && fill.videoHash) {
+                const video = figma.getVideoByHash(fill.videoHash);
+                if (video) {
+                  bytes = await video.getBytesAsync();
+                  filename = `${node.name || "video"}.mp4`;
+                  break;
+                }
+              } else if (fill.type === "IMAGE" && fill.imageHash) {
+                const image = figma.getImageByHash(fill.imageHash);
+                if (image) {
+                  bytes = await image.getBytesAsync();
+                  filename = `${node.name || "image"}.png`;
+                  break;
+                }
+              }
+            }
+          }
+          if (!bytes) {
+            try {
+              const keys = node.getPluginDataKeys();
+              for (const key of keys) {
+                const val = node.getPluginData(key);
+                if (val && val.startsWith("{")) {
+                  bytes = new TextEncoder().encode(val);
+                  filename = `${node.name || "animation"}.json`;
+                  break;
+                }
+              }
+            } catch {
+            }
+          }
+          if (!bytes) {
+            bytes = await node.exportAsync({ format: "PNG", constraint: { type: "SCALE", value: 2 } });
+            filename = `${node.name || "asset"}.png`;
+          }
+          if (bytes) {
+            figma.ui.postMessage({
+              type: "MEDIA_EXPORT_CHUNK",
+              current: i + 1,
+              total: ids.length,
+              item: {
+                id,
+                name: node.name,
+                filename: filename.replace(/[/\\?%*:|"<>]/g, "-"),
+                bytes: Array.from(bytes)
+              }
+            });
+          }
+          await new Promise((r) => setTimeout(r, 20));
+        }
+        figma.ui.postMessage({ type: "MEDIA_EXPORT_COMPLETE" });
+        return;
+      }
       if (msg.type === "SCAN_PROJECT") {
         currentScanSessionId++;
         const thisSessionId = currentScanSessionId;
         const { config } = msg;
         let targetNodes = [];
         const allIcons = [];
+        const allMedia = [];
         if (config.scope === "selection") {
           targetNodes = [...figma.currentPage.selection];
           if (targetNodes.length === 0) {
@@ -864,13 +1068,16 @@
             return;
           }
           allIcons.push(...scanForIcons(targetNodes, figma.currentPage.name, config));
+          allMedia.push(...scanForMedia(targetNodes, figma.currentPage.name));
         } else if (config.scope === "page") {
           targetNodes = [...figma.currentPage.children];
           allIcons.push(...scanForIcons(targetNodes, figma.currentPage.name, config));
+          allMedia.push(...scanForMedia(targetNodes, figma.currentPage.name));
         } else if (config.scope === "document") {
           for (const page of figma.root.children) {
             const pageIcons = scanForIcons(page.children, page.name, config);
             allIcons.push(...pageIcons);
+            allMedia.push(...scanForMedia(page.children, page.name));
             targetNodes.push(...page.children);
           }
         }
@@ -882,7 +1089,8 @@
           icons: allIcons,
           colors,
           typography,
-          components
+          components,
+          media: allMedia
         };
         figma.ui.postMessage(response);
         streamIconPreviews(allIcons, thisSessionId);

@@ -93,16 +93,32 @@ export function scanForIcons(rootNodes: readonly SceneNode[], pageName: string, 
     visited.add(node.id);
 
     if (isIconCandidate(node, config)) {
+      let componentKey = '';
+      if (node.type === 'INSTANCE') {
+        const inst = node as InstanceNode;
+        componentKey = inst.mainComponent?.key || inst.mainComponent?.id || '';
+      } else if (node.type === 'COMPONENT') {
+        const comp = node as ComponentNode;
+        componentKey = comp.key || comp.id;
+      }
+
+      const w = Math.round(node.width);
+      const h = Math.round(node.height);
+      const normName = node.name.toLowerCase().replace(/[^a-z0-9_-]/g, '').trim() || 'icon';
+      const dedupKey = componentKey ? `comp_${componentKey}` : `shape_${normName}_${w}x${h}`;
+
       icons.push({
         id: node.id,
         name: node.name,
-        width: Math.round(node.width),
-        height: Math.round(node.height),
+        width: w,
+        height: h,
         pageName,
         screenName: getTopLevelScreenName(node),
         parentPath: buildHierarchyPath(node),
         slashPath: node.name.includes('/') ? node.name : '',
         type: node.type,
+        componentKey: componentKey || undefined,
+        dedupKey,
       });
       // Once a container is classified as an icon, don't descend into its inner vector layers
       return;

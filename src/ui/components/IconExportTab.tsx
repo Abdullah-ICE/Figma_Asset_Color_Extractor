@@ -101,7 +101,8 @@ export const IconExportTab: React.FC<Props> = ({
 
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [viewMode, setViewMode] = useState<'map' | 'grid' | 'list'>('map');
+  const [viewMode, setViewMode] = useState<'unique' | 'map' | 'grid'>('unique');
+  const [expandedUniqueKey, setExpandedUniqueKey] = useState<string | null>(null);
   const [zoomLevel, setZoomLevel] = useState<number>(2);
 
   // Real-time mouse-following floating tooltip
@@ -145,6 +146,40 @@ export const IconExportTab: React.FC<Props> = ({
     });
     return pMap;
   }, [filteredIcons]);
+
+  // Group icons by Unique Key (Smart Deduplication)
+  const uniqueIconGroups = React.useMemo(() => {
+    const groupMap = new Map<
+      string,
+      {
+        dedupKey: string;
+        canonicalName: string;
+        representative: DetectedIcon;
+        instances: DetectedIcon[];
+      }
+    >();
+
+    filteredIcons.forEach(icon => {
+      const normName = icon.name.toLowerCase().replace(/[^a-z0-9_-]/g, '').trim() || 'icon';
+      const key = icon.dedupKey || `${normName}_${icon.width}x${icon.height}`;
+
+      if (!groupMap.has(key)) {
+        groupMap.set(key, {
+          dedupKey: key,
+          canonicalName: icon.name,
+          representative: icon,
+          instances: [],
+        });
+      }
+      groupMap.get(key)!.instances.push(icon);
+    });
+
+    return Array.from(groupMap.values()).sort((a, b) => b.instances.length - a.instances.length);
+  }, [filteredIcons]);
+
+  const handleToggleUnique = (group: { representative: DetectedIcon }) => {
+    handleToggleOne(group.representative.id);
+  };
 
   const handleToggleAll = () => {
     if (selectedIds.size === filteredIcons.length) {
@@ -195,12 +230,24 @@ export const IconExportTab: React.FC<Props> = ({
   };
 
   const handleStartExport = () => {
-    if (selectedIds.size === 0) return;
+    let targetNodeIds: string[] = [];
+    if (viewMode === 'unique') {
+      targetNodeIds = uniqueIconGroups
+        .filter(g => selectedIds.has(g.representative.id))
+        .map(g => g.representative.id);
+    } else {
+      targetNodeIds = filteredIcons
+        .filter(icon => selectedIds.has(icon.id))
+        .map(icon => icon.id);
+    }
+
+    if (targetNodeIds.length === 0) return;
+
     onExport({
-      nodeIds: Array.from(selectedIds),
+      nodeIds: targetNodeIds,
       format,
       scale,
-      folderMode,
+      folderMode: viewMode === 'unique' ? 'flat' : folderMode,
     });
   };
 
@@ -411,8 +458,19 @@ export const IconExportTab: React.FC<Props> = ({
                 className="px-2 py-1 text-xs border border-[var(--figma-color-border,#d1d5db)] rounded bg-[var(--figma-color-bg,#ffffff)] text-[var(--figma-color-text,#111827)] focus:outline-none focus:ring-1 focus:ring-blue-500 w-28"
               />
 
-              {/* View Switcher Toggle: MAP vs GRID vs LIST */}
+              {/* View Switcher Toggle: UNIQUE vs MAP vs GRID */}
               <div className="flex border border-gray-200 rounded p-0.5 bg-gray-100">
+                <button
+                  onClick={() => setViewMode('unique')}
+                  title="Unique Icons: Smart deduplicated icon pack (1 canonical file per icon)"
+                  className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                    viewMode === 'unique'
+                      ? 'bg-white shadow-xs text-blue-600 font-bold'
+                      : 'text-gray-500 hover:text-gray-900'
+                  }`}
+                >
+                  ✨ Unique ({uniqueIconGroups.length})
+                </button>
                 <button
                   onClick={() => setViewMode('map')}
                   title="Map View: Unified Full-Width Grid Presentation with Polygon Contour Boundaries & Tooltip"
@@ -426,7 +484,7 @@ export const IconExportTab: React.FC<Props> = ({
                 </button>
                 <button
                   onClick={() => setViewMode('grid')}
-                  title="Flat Grid View"
+                  title="Flat Grid View: All instances"
                   className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
                     viewMode === 'grid'
                       ? 'bg-white shadow-xs text-blue-600 font-bold'
@@ -434,17 +492,6 @@ export const IconExportTab: React.FC<Props> = ({
                   }`}
                 >
                   🔲 Grid
-                </button>
-                <button
-                  onClick={() => setViewMode('list')}
-                  title="List Table Mode"
-                  className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
-                    viewMode === 'list'
-                      ? 'bg-white shadow-xs text-blue-600 font-bold'
-                      : 'text-gray-500 hover:text-gray-900'
-                  }`}
-                >
-                  📋 List
                 </button>
               </div>
             </div>
@@ -454,6 +501,140 @@ export const IconExportTab: React.FC<Props> = ({
           <div className="flex-1 min-h-[240px] max-h-[calc(100vh-270px)] border border-[var(--figma-color-border,#e5e7eb)] rounded-lg p-2.5 overflow-y-auto bg-[var(--figma-color-bg-secondary,#fafafa)]">
             {filteredIcons.length === 0 ? (
               <div className="p-8 text-center text-xs text-gray-400">No matching assets found.</div>
+            ) : viewMode === 'unique' ? (
+              /* ========================================================= */
+              /* ✨ UNIQUE ICONS (SMART DEDUPLICATED PACK)                 */
+              /* ========================================================= */
+              <div className="space-y-3">
+                {/* Deduplication Summary Header */}
+                <div className="bg-blue-50/70 border border-blue-200 rounded-lg p-2.5 flex items-center justify-between flex-wrap gap-2 text-xs">
+                  <div>
+                    <div className="flex items-center space-x-1.5">
+                      <span className="font-bold text-blue-900 text-sm">
+                        ✨ {uniqueIconGroups.length} Unique Icons Identified
+                      </span>
+                      <span className="text-[10px] bg-blue-100 text-blue-800 font-bold px-2 py-0.5 rounded-full border border-blue-300">
+                        Zero Redundancy
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-blue-700 block mt-0.5">
+                      Collapsed from {icons.length} instances across {pageGroups.size} screens. Exporting in this mode creates 1 clean canonical file per icon!
+                    </span>
+                  </div>
+
+                  <span className="text-[10px] text-gray-500 font-medium">
+                    Showing all deduplicated icons
+                  </span>
+                </div>
+
+                {/* Unique Icons Grid */}
+                <div
+                  className="grid gap-2"
+                  style={{
+                    gridTemplateColumns: `repeat(auto-fill, minmax(${Math.max(120, currentZoom.minWidth * 1.5)}px, 1fr))`,
+                  }}
+                >
+                  {uniqueIconGroups.map(group => {
+                    const isSelected = selectedIds.has(group.representative.id);
+                    const isExpanded = expandedUniqueKey === group.dedupKey;
+
+                    return (
+                      <div
+                        key={group.dedupKey}
+                        className={`group relative bg-white border rounded-lg p-2 flex flex-col justify-between transition-all hover:shadow-md ${
+                          isSelected ? 'border-blue-500 ring-1 ring-blue-500/30' : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        {/* Top: Checkbox + Occurrence Badge */}
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="flex items-center space-x-1 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => handleToggleUnique(group)}
+                              className="rounded text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
+                            />
+                            <span className="text-[9px] text-gray-400 font-mono">
+                              {group.width}x{group.height}
+                            </span>
+                          </label>
+
+                          <span
+                            title={`Used ${group.instances.length} times across screens`}
+                            className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full border ${
+                              group.instances.length > 1
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                : 'bg-gray-100 text-gray-500 border-gray-200'
+                            }`}
+                          >
+                            {group.instances.length}x uses
+                          </span>
+                        </div>
+
+                        {/* Thumbnail */}
+                        <div
+                          onClick={() => onSelectNode(group.representative.id)}
+                          title="Click to locate on Figma canvas"
+                          className="w-full h-14 bg-gray-50 border border-gray-100 rounded flex items-center justify-center p-1.5 cursor-pointer hover:bg-gray-100/70 transition-colors"
+                        >
+                          {group.representative.svgPreview ? (
+                            <div
+                              className="w-full h-full flex items-center justify-center [&_svg]:max-w-full [&_svg]:max-h-full [&_svg]:w-auto [&_svg]:h-auto"
+                              dangerouslySetInnerHTML={{ __html: group.representative.svgPreview }}
+                            />
+                          ) : (
+                            <div className="w-5 h-5 rounded bg-gray-200 animate-pulse" />
+                          )}
+                        </div>
+
+                        {/* Metadata */}
+                        <div className="mt-1.5 truncate">
+                          <span
+                            title={group.canonicalName}
+                            className="font-semibold text-gray-800 block truncate text-[11px]"
+                          >
+                            {group.canonicalName}
+                          </span>
+                        </div>
+
+                        {/* Screen Occurrences Details */}
+                        {group.instances.length > 1 && (
+                          <div className="mt-1.5 pt-1 border-t border-gray-100">
+                            <button
+                              onClick={() => setExpandedUniqueKey(isExpanded ? null : group.dedupKey)}
+                              className="text-[9px] text-blue-600 hover:text-blue-800 font-medium flex items-center justify-between w-full"
+                            >
+                              <span>{isExpanded ? 'Hide' : 'View'} screens ({group.instances.length})</span>
+                              <span>{isExpanded ? '▲' : '▼'}</span>
+                            </button>
+
+                            {isExpanded && (
+                              <div className="mt-1 max-h-24 overflow-y-auto divide-y divide-gray-100 bg-gray-50 rounded p-1 text-[9px]">
+                                {group.instances.map((inst, iIdx) => (
+                                  <div key={inst.id + iIdx} className="py-0.5 flex items-center justify-between">
+                                    <span
+                                      className="truncate text-gray-600 pr-1"
+                                      title={`${inst.pageName} > ${inst.screenName}`}
+                                    >
+                                      {inst.screenName}
+                                    </span>
+                                    <button
+                                      onClick={() => onSelectNode(inst.id)}
+                                      className="text-blue-600 hover:underline flex-shrink-0"
+                                    >
+                                      Locate
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             ) : viewMode === 'map' ? (
               /* ========================================================= */
               /* 🗺️ MAP VIEW: UNIFIED GRID PRESENTATION WITH POLYGON LINES */
@@ -735,7 +916,9 @@ export const IconExportTab: React.FC<Props> = ({
               className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold rounded-md shadow-sm transition-colors flex items-center justify-center space-x-2"
             >
               <span>
-                Export {selectedIds.size} Icons ({format}) into ZIP
+                {viewMode === 'unique'
+                  ? `Export Unique Pack (${uniqueIconGroups.filter(g => selectedIds.has(g.representative.id)).length} Unique Icons • ${format}) into ZIP`
+                  : `Export ${selectedIds.size} Icons (${format}) into ZIP`}
               </span>
             </button>
           </div>

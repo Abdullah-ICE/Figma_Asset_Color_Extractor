@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   ComponentCluster,
   DetectedIcon,
+  DetectedMedia,
   ExportRequest,
   ExtractedColor,
   ExtractedTypography,
@@ -13,12 +14,14 @@ import { ColorExportTab } from './components/ColorExportTab';
 import { ComponentInventoryTab } from './components/ComponentInventoryTab';
 import { ExportProgressBar } from './components/ExportProgressBar';
 import { IconExportTab } from './components/IconExportTab';
+import { MediaExportTab } from './components/MediaExportTab';
 import { TypographyExportTab } from './components/TypographyExportTab';
 import { ZipArchiver } from './utils/zipArchiver';
 
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'icons' | 'colors' | 'typography' | 'components'>('icons');
+  const [activeTab, setActiveTab] = useState<'icons' | 'media' | 'colors' | 'typography' | 'components'>('icons');
   const [icons, setIcons] = useState<DetectedIcon[]>([]);
+  const [media, setMedia] = useState<DetectedMedia[]>([]);
   const [colors, setColors] = useState<ExtractedColor[]>([]);
   const [typography, setTypography] = useState<ExtractedTypography[]>([]);
   const [components, setComponents] = useState<ComponentCluster[]>([]);
@@ -35,6 +38,7 @@ export const App: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const archiverRef = useRef<ZipArchiver | null>(null);
+  const mediaArchiverRef = useRef<ZipArchiver | null>(null);
   const currentFormatRef = useRef<ExportRequest['format']>('SVG');
 
   const postToPlugin = (msg: UIToPluginMessage) => {
@@ -59,8 +63,17 @@ export const App: React.FC = () => {
         if ('components' in msg && Array.isArray(msg.components)) {
           setComponents(msg.components);
         }
+        if ('media' in msg && Array.isArray(msg.media)) {
+          setMedia(msg.media);
+        }
         setIsScanning(false);
         setErrorMessage(null);
+      }
+
+      if (msg.type === 'NODES_DELETED') {
+        const deletedSet = new Set(msg.ids);
+        setMedia(prev => prev.filter(m => !deletedSet.has(m.id)));
+        setIcons(prev => prev.filter(i => !deletedSet.has(i.id)));
       }
 
       if (msg.type === 'ICON_PREVIEWS_CHUNK') {
@@ -115,6 +128,28 @@ export const App: React.FC = () => {
         archiverRef.current = null;
       }
 
+      if (msg.type === 'MEDIA_EXPORT_CHUNK') {
+        if (mediaArchiverRef.current) {
+          mediaArchiverRef.current.addRawFile(msg.item.filename, msg.item.bytes);
+        }
+        setProgress({
+          current: msg.current,
+          total: msg.total,
+          statusText: `Exporting media: ${msg.item.name}`,
+        });
+      }
+
+      if (msg.type === 'MEDIA_EXPORT_COMPLETE') {
+        if (mediaArchiverRef.current) {
+          setProgress(prev => ({ ...prev, statusText: 'Creating Media ZIP archive...' }));
+          await mediaArchiverRef.current.downloadZip(status => {
+            setProgress(prev => ({ ...prev, statusText: status }));
+          });
+        }
+        setIsExporting(false);
+        mediaArchiverRef.current = null;
+      }
+
       if (msg.type === 'ERROR') {
         setErrorMessage(msg.message);
         setIsScanning(false);
@@ -140,12 +175,19 @@ export const App: React.FC = () => {
     postToPlugin({ type: 'START_EXPORT', request });
   };
 
-  const handleSelectNode = (id: string) => {
-    postToPlugin({ type: 'SELECT_NODE', id });
+  const handleExportMedia = (ids: string[]) => {
+    setIsExporting(true);
+    mediaArchiverRef.current = new ZipArchiver('figma-media-assets.zip');
+    setProgress({ current: 0, total: ids.length, statusText: 'Extracting media files...' });
+    postToPlugin({ type: 'EXPORT_MEDIA', ids });
   };
 
-  const handleCopyNode = (id: string) => {
-    postToPlugin({ type: 'COPY_NODE_TO_CANVAS', id });
+  const handleDeleteNodes = (ids: string[]) => {
+    postToPlugin({ type: 'DELETE_NODES', ids });
+  };
+
+  const handleSelectNode = (id: string) => {
+    postToPlugin({ type: 'SELECT_NODE', id });
   };
 
   const handleResizeMouseDown = (e: React.MouseEvent) => {
@@ -176,13 +218,15 @@ export const App: React.FC = () => {
       <header className="px-3.5 py-2 border-b border-[var(--figma-color-border,#e5e7eb)] flex items-center justify-between flex-shrink-0 bg-white">
         <div>
           <h1 className="font-bold text-sm tracking-tight text-[var(--figma-color-text,#111827)]">
-            Asset, Color &amp; Component Extractor
+            Asset, Color &amp; Media Extractor
           </h1>
-          <p className="text-[10px] text-gray-400">Icons, Colors, Typography &amp; UI Inventory</p>
+          <p className="text-[10px] text-gray-500">
+            Export Deduplicated Icons, MP4 Videos, Lottie, Colors &amp; Typography
+          </p>
         </div>
 
-        {/* Tab Switcher: Icons, Colors, Typography, Components */}
-        <div className="flex bg-[var(--figma-color-bg-secondary,#f3f4f6)] p-0.5 rounded-lg border border-[var(--figma-color-border,#e5e7eb)] space-x-0.5">
+        {/* 5-Tab Navigation Pill */}
+        <div className="flex bg-gray-100 p-1 rounded-lg border border-gray-200">
           <button
             onClick={() => setActiveTab('icons')}
             className={`px-2.5 py-1 rounded-md font-medium text-xs transition-colors ${
@@ -192,6 +236,16 @@ export const App: React.FC = () => {
             }`}
           >
             Icons {icons.length > 0 && `(${icons.length})`}
+          </button>
+          <button
+            onClick={() => setActiveTab('media')}
+            className={`px-2.5 py-1 rounded-md font-medium text-xs transition-colors ${
+              activeTab === 'media'
+                ? 'bg-[var(--figma-color-bg,#ffffff)] shadow-sm text-blue-600 font-bold'
+                : 'text-gray-500 hover:text-gray-900'
+            }`}
+          >
+            Media &amp; Files {media.length > 0 && `(${media.length})`}
           </button>
           <button
             onClick={() => setActiveTab('colors')}
@@ -261,6 +315,14 @@ export const App: React.FC = () => {
               onExport={handleExport}
               onSelectNode={handleSelectNode}
             />
+          ) : activeTab === 'media' ? (
+            <MediaExportTab
+              media={media}
+              isScanning={isScanning}
+              onSelectNode={handleSelectNode}
+              onDeleteNodes={handleDeleteNodes}
+              onExportMedia={handleExportMedia}
+            />
           ) : activeTab === 'colors' ? (
             <ColorExportTab colors={colors} isScanning={isScanning} />
           ) : activeTab === 'typography' ? (
@@ -277,7 +339,7 @@ export const App: React.FC = () => {
 
       {/* Footer */}
       <footer className="px-3 py-1.5 border-t border-[var(--figma-color-border,#e5e7eb)] flex justify-between items-center text-[10px] text-gray-400 bg-[var(--figma-color-bg-secondary,#fafafa)] flex-shrink-0">
-        <span>Figma Asset, Color &amp; Component Extractor • Drag corner ↘ to resize</span>
+        <span>Figma Asset, Media &amp; Component Extractor • Drag corner ↘ to resize</span>
         <button
           onClick={() => postToPlugin({ type: 'CLOSE_PLUGIN' })}
           className="hover:text-gray-700 underline pr-4"
@@ -289,12 +351,10 @@ export const App: React.FC = () => {
       {/* Drag Resize Handle */}
       <div
         onMouseDown={handleResizeMouseDown}
-        className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize flex items-end justify-end p-0.5 text-gray-400 hover:text-blue-600 transition-colors z-50"
-        title="Click and drag to resize window freely"
+        title="Click and drag to freely resize the window"
+        className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize z-50 flex items-center justify-center text-gray-400 hover:text-blue-600 transition-colors"
       >
-        <svg viewBox="0 0 6 6" className="w-2.5 h-2.5 fill-current">
-          <path d="M6 6H4V4h2v2zM6 2H4V0h2v2zM2 6H0V4h2v2z" />
-        </svg>
+        <span className="text-[11px] leading-none select-none font-mono">↘</span>
       </div>
     </div>
   );
