@@ -525,21 +525,29 @@
     }
     const clusterBuckets = /* @__PURE__ */ new Map();
     for (const { item, category, node } of candidateInstances) {
-      const w = item.properties.width;
-      const h = item.properties.height;
-      const wBucket = Math.round(w / 16) * 16;
-      const hBucket = Math.round(h / 8) * 8;
-      const normName = cleanClusterName(item.name.toLowerCase().split("/")[0]);
-      const clusterKey = `${category}_${normName}_${wBucket}x${hBucket}`;
-      if (!clusterBuckets.has(clusterKey)) {
-        clusterBuckets.set(clusterKey, {
+      const props = item.properties;
+      const fillsKey = props.fills.slice().sort().join(",");
+      const strokesKey = props.strokes.map((s) => `${s.color}:${s.weight}`).sort().join(",");
+      const pad = props.padding;
+      const padKey = `${pad.top}_${pad.right}_${pad.bottom}_${pad.left}`;
+      const exactFingerprint = [
+        category,
+        `${props.width}x${props.height}`,
+        `r:${props.cornerRadius}`,
+        `f:${fillsKey}`,
+        `s:${strokesKey}`,
+        `l:${props.layoutMode}`,
+        `p:${padKey}`
+      ].join("|");
+      if (!clusterBuckets.has(exactFingerprint)) {
+        clusterBuckets.set(exactFingerprint, {
           category,
           representativeName: cleanClusterName(item.name),
           representativeNodeId: node.id,
           instances: []
         });
       }
-      clusterBuckets.get(clusterKey).instances.push(item);
+      clusterBuckets.get(exactFingerprint).instances.push(item);
     }
     const clusters = [];
     for (const [clusterId, bucket] of clusterBuckets.entries()) {
@@ -550,26 +558,23 @@
       const sharedDimensions = { width: firstProps.width, height: firstProps.height };
       const sharedRadius = firstProps.cornerRadius;
       const sharedFills = firstProps.fills;
-      const distinctRadiuses = new Set(instances.map((i) => i.properties.cornerRadius));
-      const distinctFills = new Set(instances.map((i) => i.properties.fills.join(",")));
-      const distinctDims = new Set(instances.map((i) => `${i.properties.width}x${i.properties.height}`));
-      const details = [];
-      const hasRadiusMismatch = distinctRadiuses.size > 1;
-      const hasColorMismatch = distinctFills.size > 1;
-      const hasDimensionMismatch = distinctDims.size > 1;
-      if (hasRadiusMismatch) {
-        details.push(`Corner radius mismatch: found ${Array.from(distinctRadiuses).join(", ")}`);
+      const nameCountMap = /* @__PURE__ */ new Map();
+      for (const inst of instances) {
+        const clean = cleanClusterName(inst.name);
+        nameCountMap.set(clean, (nameCountMap.get(clean) || 0) + 1);
       }
-      if (hasColorMismatch) {
-        details.push(`Background color mismatch across instances`);
-      }
-      if (hasDimensionMismatch) {
-        details.push(`Dimensions slightly vary: ${Array.from(distinctDims).slice(0, 3).join(", ")}`);
+      let topName = bucket.representativeName;
+      let maxCount = 0;
+      for (const [n, count] of nameCountMap.entries()) {
+        if (count > maxCount) {
+          maxCount = count;
+          topName = n;
+        }
       }
       clusters.push({
         clusterId,
         category: bucket.category,
-        representativeName: bucket.representativeName,
+        representativeName: topName,
         totalOccurrences,
         representativeNodeId: bucket.representativeNodeId,
         sharedDimensions,
@@ -577,10 +582,10 @@
         sharedFills,
         instances,
         inconsistencies: {
-          hasRadiusMismatch,
-          hasColorMismatch,
-          hasDimensionMismatch,
-          details
+          hasRadiusMismatch: false,
+          hasColorMismatch: false,
+          hasDimensionMismatch: false,
+          details: []
         }
       });
     }

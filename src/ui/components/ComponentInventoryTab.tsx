@@ -30,7 +30,6 @@ const CATEGORY_BADGES: Record<ComponentCategory, { bg: string; text: string; bor
 export const ComponentInventoryTab: React.FC<Props> = ({ components, isScanning, onSelectNode }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [onlyInconsistent, setOnlyInconsistent] = useState<boolean>(false);
   const [expandedClusterIds, setExpandedClusterIds] = useState<Set<string>>(new Set());
 
   // Category counts
@@ -43,20 +42,15 @@ export const ComponentInventoryTab: React.FC<Props> = ({ components, isScanning,
   }, [components]);
 
   const totalInstances = components.reduce((acc, c) => acc + c.totalOccurrences, 0);
-  const totalInconsistent = components.filter(
-    c => c.inconsistencies.hasRadiusMismatch || c.inconsistencies.hasColorMismatch || c.inconsistencies.hasDimensionMismatch
-  ).length;
 
   const filteredClusters = components.filter(c => {
     if (selectedCategory !== 'all' && c.category !== selectedCategory) return false;
-    if (onlyInconsistent) {
-      const hasAny = c.inconsistencies.hasRadiusMismatch || c.inconsistencies.hasColorMismatch || c.inconsistencies.hasDimensionMismatch;
-      if (!hasAny) return false;
-    }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const matchName = c.representativeName.toLowerCase().includes(q);
-      const matchInstance = c.instances.some(i => i.name.toLowerCase().includes(q) || i.screenName.toLowerCase().includes(q));
+      const matchInstance = c.instances.some(
+        i => i.name.toLowerCase().includes(q) || i.screenName.toLowerCase().includes(q) || i.pageName.toLowerCase().includes(q)
+      );
       if (!matchName && !matchInstance) return false;
     }
     return true;
@@ -76,9 +70,9 @@ export const ComponentInventoryTab: React.FC<Props> = ({ components, isScanning,
     <div className="space-y-3">
       {components.length === 0 ? (
         <div className="text-center py-12 border-2 border-dashed border-[var(--figma-color-border,#e5e7eb)] rounded-lg text-xs text-gray-500 space-y-1">
-          <p className="font-semibold text-gray-700">No Repeating Components Detected</p>
+          <p className="font-semibold text-gray-700">No 100% Identical Repeating Components Found</p>
           <p className="text-[11px] text-gray-400">
-            Click &quot;Scan for Icons&quot; on the Icons tab to auto-scan the project. Components that appear 2 or more times will be grouped here.
+            Click &quot;Scan for Icons&quot; on the Icons tab to scan the project. Only components that appear 2 or more times with 100% identical size, radius, color, and properties will be grouped here.
           </p>
         </div>
       ) : (
@@ -86,21 +80,20 @@ export const ComponentInventoryTab: React.FC<Props> = ({ components, isScanning,
           {/* 1. Summary Header Card */}
           <div className="bg-[var(--figma-color-bg-secondary,#f9fafb)] p-3 rounded-lg border border-[var(--figma-color-border,#e5e7eb)] flex items-center justify-between flex-wrap gap-2 text-xs">
             <div>
-              <span className="font-bold text-gray-900 block text-sm">
-                {components.length} Repeating Component Clusters
-              </span>
-              <span className="text-[10px] text-gray-500">
-                {totalInstances} Total Component Instances Identified Across Project
+              <div className="flex items-center space-x-1.5">
+                <span className="font-bold text-gray-900 text-sm">
+                  {components.length} Exact Component Groups
+                </span>
+                <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full border border-emerald-300">
+                  ✓ 100% Same to Same
+                </span>
+              </div>
+              <span className="text-[10px] text-gray-500 block mt-0.5">
+                {totalInstances} total identical cloned instances found across your screens
               </span>
             </div>
 
             <div className="flex items-center space-x-2">
-              {totalInconsistent > 0 && (
-                <span className="text-[10px] bg-amber-50 text-amber-800 font-semibold px-2 py-0.5 rounded-full border border-amber-200 flex items-center space-x-1">
-                  <span>⚠️</span>
-                  <span>{totalInconsistent} with Design Inconsistencies</span>
-                </span>
-              )}
               <span className="text-[10px] bg-blue-50 text-blue-700 font-semibold px-2 py-0.5 rounded-full border border-blue-200">
                 Occurrences &ge; 2
               </span>
@@ -141,25 +134,13 @@ export const ComponentInventoryTab: React.FC<Props> = ({ components, isScanning,
                 })}
               </div>
 
-              <div className="flex items-center space-x-2">
-                <label className="flex items-center space-x-1 text-[11px] text-gray-600 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={onlyInconsistent}
-                    onChange={e => setOnlyInconsistent(e.target.checked)}
-                    className="rounded text-amber-600 focus:ring-amber-500 w-3 h-3"
-                  />
-                  <span>Only Inconsistent ⚠️</span>
-                </label>
-
-                <input
-                  type="text"
-                  placeholder="Filter components..."
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  className="px-2 py-1 text-xs border border-gray-300 rounded bg-white text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500 w-36"
-                />
-              </div>
+              <input
+                type="text"
+                placeholder="Search exact components..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="px-2 py-1 text-xs border border-gray-300 rounded bg-white text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500 w-44"
+              />
             </div>
 
             {/* 3. Cluster Cards List */}
@@ -174,7 +155,6 @@ export const ComponentInventoryTab: React.FC<Props> = ({ components, isScanning,
                   const isExpanded = expandedClusterIds.has(cluster.clusterId);
                   const firstItem = cluster.instances[0];
                   const props = firstItem.properties;
-                  const hasAlerts = cluster.inconsistencies.details.length > 0;
 
                   return (
                     <div
@@ -193,8 +173,8 @@ export const ComponentInventoryTab: React.FC<Props> = ({ components, isScanning,
                         </div>
 
                         <div className="flex items-center space-x-2">
-                          <span className="text-[10px] bg-blue-50 text-blue-800 font-semibold px-2 py-0.5 rounded-full border border-blue-200">
-                            {cluster.totalOccurrences} occurrences
+                          <span className="text-[10px] bg-emerald-50 text-emerald-800 font-bold px-2 py-0.5 rounded-full border border-emerald-200">
+                            {cluster.totalOccurrences} exact clones
                           </span>
                           <button
                             onClick={() => onSelectNode(cluster.representativeNodeId)}
@@ -220,11 +200,11 @@ export const ComponentInventoryTab: React.FC<Props> = ({ components, isScanning,
                           )}
                         </div>
 
-                        {/* Property Details Grid */}
+                        {/* Property Details Grid (100% Identical across all instances) */}
                         <div className="flex-1 grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px]">
                           {/* Dimensions */}
                           <div className="bg-gray-50/70 p-1.5 rounded border border-gray-100">
-                            <span className="text-gray-400 block text-[9px] uppercase font-semibold">Size (W x H)</span>
+                            <span className="text-gray-400 block text-[9px] uppercase font-semibold">Exact Size</span>
                             <span className="font-mono font-bold text-gray-800">
                               {props.width} x {props.height}px
                             </span>
@@ -232,7 +212,7 @@ export const ComponentInventoryTab: React.FC<Props> = ({ components, isScanning,
 
                           {/* Corner Radius */}
                           <div className="bg-gray-50/70 p-1.5 rounded border border-gray-100">
-                            <span className="text-gray-400 block text-[9px] uppercase font-semibold">Corner Radius</span>
+                            <span className="text-gray-400 block text-[9px] uppercase font-semibold">Exact Radius</span>
                             <span className="font-mono font-bold text-gray-800">
                               {typeof props.cornerRadius === 'number' ? `${props.cornerRadius}px` : props.cornerRadius}
                             </span>
@@ -240,7 +220,7 @@ export const ComponentInventoryTab: React.FC<Props> = ({ components, isScanning,
 
                           {/* Fill Background */}
                           <div className="bg-gray-50/70 p-1.5 rounded border border-gray-100">
-                            <span className="text-gray-400 block text-[9px] uppercase font-semibold">Fill Color</span>
+                            <span className="text-gray-400 block text-[9px] uppercase font-semibold">Exact Fill</span>
                             <div className="flex items-center space-x-1.5 mt-0.5">
                               {props.fills.length > 0 ? (
                                 props.fills.slice(0, 2).map((hex, i) => (
@@ -260,7 +240,7 @@ export const ComponentInventoryTab: React.FC<Props> = ({ components, isScanning,
 
                           {/* Border / Stroke */}
                           <div className="bg-gray-50/70 p-1.5 rounded border border-gray-100">
-                            <span className="text-gray-400 block text-[9px] uppercase font-semibold">Border / Stroke</span>
+                            <span className="text-gray-400 block text-[9px] uppercase font-semibold">Exact Border</span>
                             {props.strokes.length > 0 ? (
                               <div className="flex items-center space-x-1 mt-0.5">
                                 <div
@@ -278,10 +258,10 @@ export const ComponentInventoryTab: React.FC<Props> = ({ components, isScanning,
 
                           {/* AutoLayout & Padding */}
                           <div className="bg-gray-50/70 p-1.5 rounded border border-gray-100">
-                            <span className="text-gray-400 block text-[9px] uppercase font-semibold">AutoLayout</span>
+                            <span className="text-gray-400 block text-[9px] uppercase font-semibold">Padding &amp; Layout</span>
                             <span className="font-mono text-[10px] text-gray-700 truncate block">
                               {props.layoutMode !== 'NONE'
-                                ? `${props.layoutMode[0]} (P: ${props.padding.top},${props.padding.right})`
+                                ? `${props.layoutMode[0]} (${props.padding.top},${props.padding.right},${props.padding.bottom},${props.padding.left})`
                                 : 'Fixed Frame'}
                             </span>
                           </div>
@@ -300,27 +280,13 @@ export const ComponentInventoryTab: React.FC<Props> = ({ components, isScanning,
                         </div>
                       </div>
 
-                      {/* Inconsistency Warning Banner (If design mismatch exists) */}
-                      {hasAlerts && (
-                        <div className="p-2 bg-amber-50/70 border border-amber-200 rounded text-[10px] text-amber-800 space-y-0.5">
-                          <div className="font-bold flex items-center space-x-1">
-                            <span>⚠️ Design Inconsistency Detected:</span>
-                          </div>
-                          {cluster.inconsistencies.details.map((detail, dIdx) => (
-                            <div key={dIdx} className="pl-3.5 text-gray-700">
-                              • {detail}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Collapsible Instances List */}
+                      {/* Collapsible Exact Clones List */}
                       <div className="pt-1">
                         <button
                           onClick={() => toggleExpand(cluster.clusterId)}
-                          className="text-[11px] text-gray-500 hover:text-gray-900 font-medium flex items-center space-x-1"
+                          className="text-[11px] text-gray-600 hover:text-gray-900 font-medium flex items-center space-x-1"
                         >
-                          <span>{isExpanded ? '▼ Hide' : '▶ Show'} all {cluster.instances.length} instances across screens</span>
+                          <span>{isExpanded ? '▼ Hide' : '▶ Show'} all {cluster.instances.length} exact clone locations</span>
                         </button>
 
                         {isExpanded && (
@@ -348,7 +314,7 @@ export const ComponentInventoryTab: React.FC<Props> = ({ components, isScanning,
                                   </span>
                                   <button
                                     onClick={() => onSelectNode(inst.nodeId)}
-                                    title="Locate instance on canvas"
+                                    title="Locate exact instance on canvas"
                                     className="text-[10px] text-blue-600 hover:text-blue-800 underline font-medium ml-1"
                                   >
                                     Locate

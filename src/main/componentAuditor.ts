@@ -42,7 +42,7 @@ function extractNodeProperties(node: FrameNode | ComponentNode | InstanceNode): 
   const width = Math.round(node.width);
   const height = Math.round(node.height);
 
-  // Corner radius
+  // Exact Corner radius
   let cornerRadius: number | string = 0;
   if ('cornerRadius' in node && node.cornerRadius !== figma.mixed) {
     cornerRadius = Math.round(node.cornerRadius as number);
@@ -58,7 +58,7 @@ function extractNodeProperties(node: FrameNode | ComponentNode | InstanceNode): 
     }
   }
 
-  // Fills
+  // Exact Fills
   const fills: string[] = [];
   if (Array.isArray(node.fills)) {
     for (const fill of node.fills) {
@@ -68,7 +68,7 @@ function extractNodeProperties(node: FrameNode | ComponentNode | InstanceNode): 
     }
   }
 
-  // Strokes
+  // Exact Strokes
   const strokes: { color: string; weight: number }[] = [];
   if (Array.isArray(node.strokes)) {
     const weight = typeof node.strokeWeight === 'number' ? Math.round(node.strokeWeight) : 1;
@@ -82,7 +82,7 @@ function extractNodeProperties(node: FrameNode | ComponentNode | InstanceNode): 
     }
   }
 
-  // AutoLayout & Spacing
+  // Exact AutoLayout & Spacing
   const padding = {
     top: typeof node.paddingTop === 'number' ? Math.round(node.paddingTop) : 0,
     right: typeof node.paddingRight === 'number' ? Math.round(node.paddingRight) : 0,
@@ -214,7 +214,7 @@ export function auditProjectComponents(rootNodes: readonly SceneNode[]): Compone
       const w = frame.width;
       const h = frame.height;
 
-      // Skip entire giant artboards / screens (> 1400w and > 800h)
+      // Skip entire giant artboards / screens (> 800w and > 600h)
       const isGiantScreen = w >= 800 && h >= 600;
       // Skip pure tiny icons (<= 44x44 with 0 text layers)
       const isPureTinyIcon = w <= 44 && h <= 44;
@@ -258,7 +258,9 @@ export function auditProjectComponents(rootNodes: readonly SceneNode[]): Compone
   }
 
   // =========================================================================
-  // CLUSTERING: Group similar components by Category + Geometric Proximity
+  // STRICT EXACT MATCHING (100% SAME TO SAME)
+  // No fuzzy tolerances. Width, Height, Radius, Colors, Strokes, & Padding
+  // must match 100% exactly across instances!
   // =========================================================================
   const clusterBuckets = new Map<
     string,
@@ -271,19 +273,27 @@ export function auditProjectComponents(rootNodes: readonly SceneNode[]): Compone
   >();
 
   for (const { item, category, node } of candidateInstances) {
-    const w = item.properties.width;
-    const h = item.properties.height;
+    const props = item.properties;
 
-    // Tolerance buckets: width within ~16px, height within ~8px
-    const wBucket = Math.round(w / 16) * 16;
-    const hBucket = Math.round(h / 8) * 8;
-    const normName = cleanClusterName(item.name.toLowerCase().split('/')[0]);
+    // Build strict exact property fingerprint
+    const fillsKey = props.fills.slice().sort().join(',');
+    const strokesKey = props.strokes.map(s => `${s.color}:${s.weight}`).sort().join(',');
+    const pad = props.padding;
+    const padKey = `${pad.top}_${pad.right}_${pad.bottom}_${pad.left}`;
 
-    // Key combining category, dimension footprint, and semantic name
-    const clusterKey = `${category}_${normName}_${wBucket}x${hBucket}`;
+    // Exact fingerprint string: Size, Radius, Fills, Strokes, Layout, Padding
+    const exactFingerprint = [
+      category,
+      `${props.width}x${props.height}`,
+      `r:${props.cornerRadius}`,
+      `f:${fillsKey}`,
+      `s:${strokesKey}`,
+      `l:${props.layoutMode}`,
+      `p:${padKey}`,
+    ].join('|');
 
-    if (!clusterBuckets.has(clusterKey)) {
-      clusterBuckets.set(clusterKey, {
+    if (!clusterBuckets.has(exactFingerprint)) {
+      clusterBuckets.set(exactFingerprint, {
         category,
         representativeName: cleanClusterName(item.name),
         representativeNodeId: node.id,
@@ -291,50 +301,44 @@ export function auditProjectComponents(rootNodes: readonly SceneNode[]): Compone
       });
     }
 
-    clusterBuckets.get(clusterKey)!.instances.push(item);
+    clusterBuckets.get(exactFingerprint)!.instances.push(item);
   }
 
   // =========================================================================
-  // FILTERING: Keep only clusters with occurrences >= 2
+  // FILTERING: Keep ONLY clusters that appear 2 or more times (exact clones)
   // =========================================================================
   const clusters: ComponentCluster[] = [];
 
   for (const [clusterId, bucket] of clusterBuckets.entries()) {
-    if (bucket.instances.length < 2) continue; // Only show repeated components!
+    if (bucket.instances.length < 2) continue; // Must be repeated >= 2 times!
 
     const instances = bucket.instances;
     const totalOccurrences = instances.length;
 
-    // Calculate shared / dominant properties
     const firstProps = instances[0].properties;
     const sharedDimensions = { width: firstProps.width, height: firstProps.height };
     const sharedRadius = firstProps.cornerRadius;
     const sharedFills = firstProps.fills;
 
-    // Inconsistency Analysis (Linter)
-    const distinctRadiuses = new Set(instances.map(i => i.properties.cornerRadius));
-    const distinctFills = new Set(instances.map(i => i.properties.fills.join(',')));
-    const distinctDims = new Set(instances.map(i => `${i.properties.width}x${i.properties.height}`));
-
-    const details: string[] = [];
-    const hasRadiusMismatch = distinctRadiuses.size > 1;
-    const hasColorMismatch = distinctFills.size > 1;
-    const hasDimensionMismatch = distinctDims.size > 1;
-
-    if (hasRadiusMismatch) {
-      details.push(`Corner radius mismatch: found ${Array.from(distinctRadiuses).join(', ')}`);
+    // Pick the most common or clean name among the exact clones
+    const nameCountMap = new Map<string, number>();
+    for (const inst of instances) {
+      const clean = cleanClusterName(inst.name);
+      nameCountMap.set(clean, (nameCountMap.get(clean) || 0) + 1);
     }
-    if (hasColorMismatch) {
-      details.push(`Background color mismatch across instances`);
-    }
-    if (hasDimensionMismatch) {
-      details.push(`Dimensions slightly vary: ${Array.from(distinctDims).slice(0, 3).join(', ')}`);
+    let topName = bucket.representativeName;
+    let maxCount = 0;
+    for (const [n, count] of nameCountMap.entries()) {
+      if (count > maxCount) {
+        maxCount = count;
+        topName = n;
+      }
     }
 
     clusters.push({
       clusterId,
       category: bucket.category,
-      representativeName: bucket.representativeName,
+      representativeName: topName,
       totalOccurrences,
       representativeNodeId: bucket.representativeNodeId,
       sharedDimensions,
@@ -342,14 +346,14 @@ export function auditProjectComponents(rootNodes: readonly SceneNode[]): Compone
       sharedFills,
       instances,
       inconsistencies: {
-        hasRadiusMismatch,
-        hasColorMismatch,
-        hasDimensionMismatch,
-        details,
+        hasRadiusMismatch: false,
+        hasColorMismatch: false,
+        hasDimensionMismatch: false,
+        details: [],
       },
     });
   }
 
-  // Sort clusters by number of occurrences descending
+  // Sort clusters by number of occurrences descending (most repeated clones first)
   return clusters.sort((a, b) => b.totalOccurrences - a.totalOccurrences);
 }
