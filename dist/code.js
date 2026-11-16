@@ -896,6 +896,23 @@
       return str;
     }
   }
+  function base64ToUint8Array(base64) {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const clean = base64.replace(/[^A-Za-z0-9+/]/g, "");
+    const len = clean.length;
+    const bytes = new Uint8Array(Math.floor(len * 3 / 4));
+    let p = 0;
+    for (let i = 0; i < len; i += 4) {
+      const a = chars.indexOf(clean[i]);
+      const b = chars.indexOf(clean[i + 1]);
+      const c = chars.indexOf(clean[i + 2]);
+      const d = chars.indexOf(clean[i + 3]);
+      bytes[p++] = a << 2 | b >> 4;
+      if (c !== -1 && c !== 64) bytes[p++] = (b & 15) << 4 | c >> 2;
+      if (d !== -1 && d !== 64) bytes[p++] = (c & 3) << 6 | d;
+    }
+    return bytes.subarray(0, p);
+  }
   async function streamIconPreviews(icons, sessionId) {
     const PREVIEW_CHUNK_SIZE = 18;
     for (let i = 0; i < icons.length; i += PREVIEW_CHUNK_SIZE) {
@@ -1046,7 +1063,8 @@
             const node = figma.getNodeById(id);
             if (!node) continue;
             let bytes = null;
-            let filename = `${node.name || "media"}.png`;
+            const cleanName = node.name ? node.name.trim() : "media";
+            let filename = cleanName;
             if ("fills" in node && Array.isArray(node.fills)) {
               for (const fill of node.fills) {
                 if (fill.type === "IMAGE" && fill.imageHash) {
@@ -1054,7 +1072,7 @@
                     const image = figma.getImageByHash(fill.imageHash);
                     if (image) {
                       bytes = await image.getBytesAsync();
-                      filename = `${node.name || "image"}.png`;
+                      filename = cleanName.match(/\.(png|jpg|jpeg|webp)$/i) ? cleanName : `${cleanName}.png`;
                       break;
                     }
                   } catch {
@@ -1065,7 +1083,7 @@
                       const video = figma.getVideoByHash(fill.videoHash);
                       if (video) {
                         bytes = await video.getBytesAsync();
-                        filename = `${node.name || "video"}.mp4`;
+                        filename = cleanName.match(/\.(mp4|mov|webm)$/i) ? cleanName : `${cleanName}.mp4`;
                         break;
                       }
                     } catch {
@@ -1074,7 +1092,7 @@
                   if (!bytes) {
                     try {
                       bytes = await node.exportAsync({ format: "MP4" });
-                      filename = `${node.name || "video"}.mp4`;
+                      filename = cleanName.match(/\.(mp4|mov|webm)$/i) ? cleanName : `${cleanName}.mp4`;
                       break;
                     } catch {
                     }
@@ -1082,14 +1100,47 @@
                 }
               }
             }
+            if (!bytes && cleanName.toLowerCase().endsWith(".pdf")) {
+              try {
+                bytes = await node.exportAsync({ format: "PDF" });
+                filename = cleanName;
+              } catch {
+              }
+            }
+            if (!bytes && cleanName.toLowerCase().endsWith(".svg")) {
+              try {
+                bytes = await node.exportAsync({ format: "SVG" });
+                filename = cleanName;
+              } catch {
+              }
+            }
             if (!bytes) {
               try {
                 const keys = node.getPluginDataKeys();
                 for (const key of keys) {
                   const val = node.getPluginData(key);
-                  if (val && val.startsWith("{")) {
+                  if (!val) continue;
+                  if (val.includes(";base64,")) {
+                    const base64Data = val.split(";base64,")[1];
+                    bytes = base64ToUint8Array(base64Data);
+                    if (!filename.includes(".")) {
+                      if (val.includes("audio/mp3") || key.includes("mp3")) filename += ".mp3";
+                      else if (val.includes("audio/wav") || key.includes("wav")) filename += ".wav";
+                      else if (val.includes("json") || key.includes("lottie")) filename += ".json";
+                      else filename += ".bin";
+                    }
+                    break;
+                  }
+                  if (val.startsWith("{") && (key.includes("lottie") || key.includes("animation") || key.includes("json") || cleanName.toLowerCase().includes("lottie"))) {
                     bytes = new TextEncoder().encode(val);
-                    filename = `${node.name || "animation"}.json`;
+                    filename = cleanName.endsWith(".json") ? cleanName : `${cleanName}.json`;
+                    break;
+                  }
+                  if (val.startsWith("http://") || val.startsWith("https://")) {
+                    bytes = new TextEncoder().encode(`[InternetShortcut]
+URL=${val}
+`);
+                    filename = `${cleanName}.url`;
                     break;
                   }
                 }
@@ -1102,7 +1153,9 @@
                   format: "PNG",
                   constraint: { type: "SCALE", value: 2 }
                 });
-                filename = `${node.name || "asset"}.png`;
+                if (!filename.includes(".")) {
+                  filename = `${filename}.png`;
+                }
               } catch (err) {
                 console.warn(`Could not export node ${node.name}:`, err);
               }
