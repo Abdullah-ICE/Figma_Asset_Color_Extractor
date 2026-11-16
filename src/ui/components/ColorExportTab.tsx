@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { ExtractedColor } from '../../main/types';
 import { copyTextToClipboard } from '../utils/clipboard';
 import {
@@ -14,7 +14,7 @@ interface Props {
 }
 
 export const ColorExportTab: React.FC<Props> = ({ colors }) => {
-  const [viewMode, setViewMode] = useState<'screen' | 'project'>('screen');
+  const [selectedScreen, setSelectedScreen] = useState<string>('all');
   const [tokenFormat, setTokenFormat] = useState<'css' | 'tailwind' | 'scss' | 'json'>('css');
   const [copied, setCopied] = useState<boolean>(false);
   const [copiedHex, setCopiedHex] = useState<string | null>(null);
@@ -32,33 +32,21 @@ export const ColorExportTab: React.FC<Props> = ({ colors }) => {
     return Array.from(screens).sort();
   }, [colors]);
 
-  const [selectedScreen, setSelectedScreen] = useState<string>(() => allScreens[0] || '');
-
-  useEffect(() => {
-    if (allScreens.length > 0 && (!selectedScreen || !allScreens.includes(selectedScreen))) {
-      setSelectedScreen(allScreens[0]);
-    }
-  }, [allScreens, selectedScreen]);
-
   // Clean, strictly filtered colors:
   const displayColors = useMemo(() => {
-    if (viewMode === 'screen') {
-      // 1. Single Screen Mode: Show ONLY the colors used on this exact screen
-      const activeScreen = selectedScreen || allScreens[0];
-      if (!activeScreen) return colors.slice(0, 15);
-      return colors.filter(c => c.screenNames && c.screenNames.includes(activeScreen));
-    } else {
-      // 2. Core App Theme: Exclude one-off random colors; only keep true recurring theme colors
-      return colors.filter(c => {
-        const isToken = c.source === 'style' || c.source === 'variable' || (c.roles && c.roles.includes('token'));
-        if (isToken) return true;
-        // Must be used at least 2 times to be considered a project theme color
-        return c.usageCount >= 2;
-      });
+    if (selectedScreen !== 'all') {
+      // Single Screen: Show ONLY the colors used on this exact screen
+      return colors.filter(c => c.screenNames && c.screenNames.includes(selectedScreen));
     }
-  }, [colors, viewMode, selectedScreen, allScreens]);
+    // All Screens: Show core recurring theme colors (used >= 2 times or design tokens)
+    return colors.filter(c => {
+      const isToken = c.source === 'style' || c.source === 'variable' || (c.roles && c.roles.includes('token'));
+      if (isToken) return true;
+      return c.usageCount >= 2;
+    });
+  }, [colors, selectedScreen]);
 
-  // Group into clean, simple sections: Text, Surfaces, Borders
+  // Group into clean, simple sections: Surfaces, Text, Borders
   const groupedColors = useMemo(() => {
     const text: ExtractedColor[] = [];
     const surface: ExtractedColor[] = [];
@@ -154,32 +142,13 @@ export const ColorExportTab: React.FC<Props> = ({ colors }) => {
         </div>
       ) : (
         <>
-          {/* Simple Top Navigation: Screen vs Project Palette */}
+          {/* Top Bar: Clean Screen Selector */}
           <div className="bg-gray-50 p-2.5 rounded-lg border border-gray-200 flex items-center justify-between gap-2 text-xs flex-wrap">
-            <div className="flex items-center space-x-1 bg-white p-0.5 rounded-md border border-gray-300">
-              <button
-                onClick={() => setViewMode('screen')}
-                className={`px-3 py-1 rounded text-xs font-semibold transition-all ${
-                  viewMode === 'screen'
-                    ? 'bg-blue-600 text-white shadow-xs'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                🎯 Single Screen
-              </button>
-              <button
-                onClick={() => setViewMode('project')}
-                className={`px-3 py-1 rounded text-xs font-semibold transition-all ${
-                  viewMode === 'project'
-                    ? 'bg-blue-600 text-white shadow-xs'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                🌐 Core App Theme
-              </button>
-            </div>
+            <span className="font-bold text-gray-900 text-xs">
+              🎨 {displayColors.length} Colors {selectedScreen !== 'all' ? `on "${selectedScreen}"` : 'in Project'}
+            </span>
 
-            {viewMode === 'screen' && allScreens.length > 0 && (
+            {allScreens.length > 0 && (
               <div className="flex items-center space-x-1.5 flex-1 max-w-xs ml-auto">
                 <span className="text-[11px] font-medium text-gray-500 flex-shrink-0">Screen:</span>
                 <select
@@ -187,6 +156,7 @@ export const ColorExportTab: React.FC<Props> = ({ colors }) => {
                   onChange={e => setSelectedScreen(e.target.value)}
                   className="bg-white border border-gray-300 rounded px-2 py-1 text-xs text-gray-800 font-semibold focus:ring-1 focus:ring-blue-500 focus:outline-none w-full"
                 >
+                  <option value="all">🌐 All Screens ({allScreens.length})</option>
                   {allScreens.map(scr => (
                     <option key={scr} value={scr}>
                       {scr}
@@ -201,7 +171,7 @@ export const ColorExportTab: React.FC<Props> = ({ colors }) => {
           <div className="space-y-3 max-h-56 overflow-y-auto pr-1">
             {displayColors.length === 0 ? (
               <div className="text-center py-6 text-gray-400 text-xs">
-                No colors found for this view.
+                No colors found for this screen.
               </div>
             ) : (
               <>
