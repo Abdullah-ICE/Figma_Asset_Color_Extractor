@@ -814,6 +814,40 @@
         }
         return;
       }
+      if (msg.type === "COPY_NODE_TO_CANVAS") {
+        const node = figma.getNodeById(msg.id);
+        if (node) {
+          try {
+            let p = node.parent;
+            while (p && p.type !== "PAGE") {
+              p = p.parent;
+            }
+            const nodePage = p;
+            const originalPage = figma.currentPage;
+            let clone;
+            if (nodePage && nodePage.id !== originalPage.id) {
+              figma.currentPage = nodePage;
+              clone = node.clone();
+              originalPage.appendChild(clone);
+              figma.currentPage = originalPage;
+            } else {
+              clone = node.clone();
+              figma.currentPage.appendChild(clone);
+            }
+            const center = figma.viewport.center;
+            clone.x = Math.round(center.x - clone.width / 2);
+            clone.y = Math.round(center.y - clone.height / 2);
+            figma.currentPage.selection = [clone];
+            figma.viewport.scrollAndZoomIntoView([clone]);
+            figma.notify(`\u2713 Copied "${node.name}" to canvas!`, { timeout: 2500 });
+          } catch (err) {
+            figma.notify(`Error copying component: ${err?.message || err}`, { error: true });
+          }
+        } else {
+          figma.notify("Node not found on canvas", { error: true });
+        }
+        return;
+      }
       if (msg.type === "SCAN_PROJECT") {
         currentScanSessionId++;
         const thisSessionId = currentScanSessionId;

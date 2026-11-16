@@ -145,6 +145,46 @@ figma.ui.onmessage = async (msg: UIToPluginMessage) => {
       return;
     }
 
+    if (msg.type === 'COPY_NODE_TO_CANVAS') {
+      const node = figma.getNodeById(msg.id) as SceneNode | null;
+      if (node) {
+        try {
+          // Identify the page where node resides
+          let p: BaseNode | null = node.parent;
+          while (p && p.type !== 'PAGE') {
+            p = p.parent;
+          }
+          const nodePage = p as PageNode | null;
+          const originalPage = figma.currentPage;
+
+          let clone: SceneNode;
+          if (nodePage && nodePage.id !== originalPage.id) {
+            figma.currentPage = nodePage;
+            clone = node.clone();
+            originalPage.appendChild(clone);
+            figma.currentPage = originalPage;
+          } else {
+            clone = node.clone();
+            figma.currentPage.appendChild(clone);
+          }
+
+          // Center clone in current viewport
+          const center = figma.viewport.center;
+          clone.x = Math.round(center.x - clone.width / 2);
+          clone.y = Math.round(center.y - clone.height / 2);
+
+          figma.currentPage.selection = [clone];
+          figma.viewport.scrollAndZoomIntoView([clone]);
+          figma.notify(`✓ Copied "${node.name}" to canvas!`, { timeout: 2500 });
+        } catch (err: any) {
+          figma.notify(`Error copying component: ${err?.message || err}`, { error: true });
+        }
+      } else {
+        figma.notify('Node not found on canvas', { error: true });
+      }
+      return;
+    }
+
     if (msg.type === 'SCAN_PROJECT') {
       currentScanSessionId++;
       const thisSessionId = currentScanSessionId;

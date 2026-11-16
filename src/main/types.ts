@@ -123,4 +123,5 @@ export type UIToPluginMessage =
   | { type: 'START_EXPORT'; request: ExportRequest }
   | { type: 'CLOSE_PLUGIN' }
   | { type: 'SELECT_NODE'; id: string }
+  | { type: 'COPY_NODE_TO_CANVAS'; id: string }
   | { type: 'RESIZE_WINDOW'; width: number; height: number };

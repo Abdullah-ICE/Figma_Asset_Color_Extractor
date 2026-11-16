@@ -144,6 +144,10 @@ export const App: React.FC = () => {
     postToPlugin({ type: 'SELECT_NODE', id });
   };
 
+  const handleCopyNode = (id: string) => {
+    postToPlugin({ type: 'COPY_NODE_TO_CANVAS', id });
+  };
+
   const handleResizeMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     const startX = e.clientX;
@@ -266,6 +270,7 @@ export const App: React.FC = () => {
               components={components}
               isScanning={isScanning}
               onSelectNode={handleSelectNode}
+              onCopyNode={handleCopyNode}
             />
           )}
         </div>
