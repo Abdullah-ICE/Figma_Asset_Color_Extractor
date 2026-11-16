@@ -178,7 +178,7 @@
               pageName,
               screenName: getTopLevelScreenName2(node),
               videoHash: fill.videoHash,
-              sizeEstimate: "MP4 Video"
+              sizeEstimate: "Video Poster Frame"
             });
             detectedAsMedia = true;
             break;
@@ -1081,7 +1081,7 @@
                   if (typeof figma.getVideoByHash === "function") {
                     try {
                       const video = figma.getVideoByHash(fill.videoHash);
-                      if (video) {
+                      if (video && typeof video.getBytesAsync === "function") {
                         bytes = await video.getBytesAsync();
                         filename = cleanName.match(/\.(mp4|mov|webm)$/i) ? cleanName : `${cleanName}.mp4`;
                         break;
@@ -1089,13 +1089,15 @@
                     } catch {
                     }
                   }
-                  if (!bytes) {
-                    try {
-                      bytes = await node.exportAsync({ format: "MP4" });
-                      filename = cleanName.match(/\.(mp4|mov|webm)$/i) ? cleanName : `${cleanName}.mp4`;
-                      break;
-                    } catch {
-                    }
+                  try {
+                    bytes = await node.exportAsync({
+                      format: "PNG",
+                      constraint: { type: "SCALE", value: 2 }
+                    });
+                    const baseName = cleanName.replace(/\.(mp4|mov|webm|png|jpg)$/i, "");
+                    filename = `${baseName} (Video Frame).png`;
+                    break;
+                  } catch {
                   }
                 }
               }

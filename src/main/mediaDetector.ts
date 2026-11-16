@@ -78,7 +78,7 @@ export function scanForMedia(rootNodes: readonly SceneNode[], pageName: string):
             pageName,
             screenName: getTopLevelScreenName(node),
             videoHash: fill.videoHash,
-            sizeEstimate: 'MP4 Video',
+            sizeEstimate: 'Video Poster Frame',
           });
           detectedAsMedia = true;
           break;

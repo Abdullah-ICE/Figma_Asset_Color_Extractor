@@ -248,7 +248,7 @@ figma.ui.onmessage = async (msg: UIToPluginMessage) => {
                 if (typeof (figma as any).getVideoByHash === 'function') {
                   try {
                     const video = (figma as any).getVideoByHash(fill.videoHash);
-                    if (video) {
+                    if (video && typeof video.getBytesAsync === 'function') {
                       bytes = await video.getBytesAsync();
                       filename = cleanName.match(/\.(mp4|mov|webm)$/i) ? cleanName : `${cleanName}.mp4`;
                       break;
@@ -256,13 +256,17 @@ figma.ui.onmessage = async (msg: UIToPluginMessage) => {
                   } catch {}
                 }
 
-                if (!bytes) {
-                  try {
-                    bytes = await (node as any).exportAsync({ format: 'MP4' });
-                    filename = cleanName.match(/\.(mp4|mov|webm)$/i) ? cleanName : `${cleanName}.mp4`;
-                    break;
-                  } catch {}
-                }
+                // Figma Plugin API does not expose raw MP4 stream/bytes for video fills.
+                // Safely export 2x high-resolution video poster snapshot.
+                try {
+                  bytes = await node.exportAsync({
+                    format: 'PNG',
+                    constraint: { type: 'SCALE', value: 2 },
+                  });
+                  const baseName = cleanName.replace(/\.(mp4|mov|webm|png|jpg)$/i, '');
+                  filename = `${baseName} (Video Frame).png`;
+                  break;
+                } catch {}
               }
             }
           }
