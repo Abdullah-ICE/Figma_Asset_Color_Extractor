@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ExtractedTypography } from '../../main/types';
+import { copyTextToClipboard } from '../utils/clipboard';
 import {
   generateTypographyCss,
   generateTypographyJson,
@@ -15,6 +16,7 @@ interface Props {
 export const TypographyExportTab: React.FC<Props> = ({ typography, isScanning }) => {
   const [tokenFormat, setTokenFormat] = useState<'css' | 'tailwind' | 'scss' | 'json'>('css');
   const [copied, setCopied] = useState<boolean>(false);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [sampleText, setSampleText] = useState<string>('The quick brown fox jumps over the lazy dog');
 
@@ -45,10 +47,31 @@ export const TypographyExportTab: React.FC<Props> = ({ typography, isScanning })
     }
   };
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(getCode());
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async () => {
+    const ok = await copyTextToClipboard(getCode());
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const handleCopySingleTypography = async (t: ExtractedTypography, key: string) => {
+    const lines = [
+      `font-family: '${t.fontFamily}', sans-serif;`,
+      `font-size: ${t.fontSize}px;`,
+      `font-weight: ${t.fontWeight};`,
+    ];
+    if (t.lineHeight !== 'normal' && t.lineHeight !== 'auto') {
+      lines.push(`line-height: ${t.lineHeight};`);
+    }
+    if (t.letterSpacing !== 'normal' && t.letterSpacing !== '0px') {
+      lines.push(`letter-spacing: ${t.letterSpacing};`);
+    }
+    const ok = await copyTextToClipboard(lines.join(' '));
+    if (ok) {
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey(null), 1500);
+    }
   };
 
   const handleDownload = () => {
@@ -124,51 +147,67 @@ export const TypographyExportTab: React.FC<Props> = ({ typography, isScanning })
 
             {/* Typography List / Ladder */}
             <div className="border border-[var(--figma-color-border,#e5e7eb)] rounded-lg max-h-56 overflow-y-auto divide-y divide-gray-100 bg-white">
-              {filteredTypography.map((t, idx) => (
-                <div
-                  key={`${t.fontFamily}-${t.fontSize}-${t.fontStyle}-${idx}`}
-                  className="p-3 hover:bg-gray-50/80 transition-colors space-y-1.5"
-                >
-                  <div className="flex items-center justify-between text-xs">
-                    <div className="flex items-center space-x-2">
-                      <span className="font-mono font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 text-[11px]">
-                        {t.fontSize}px
-                      </span>
-                      <span className="font-semibold text-gray-900">
-                        {t.fontFamily} {t.fontStyle} ({t.fontWeight})
-                      </span>
-                      {t.name && (
-                        <span className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-mono">
-                          {t.name}
-                        </span>
-                      )}
-                    </div>
+              {filteredTypography.map((t, idx) => {
+                const itemKey = `${t.fontFamily}-${t.fontSize}-${t.fontStyle}-${idx}`;
+                const isItemCopied = copiedKey === itemKey;
 
-                    <div className="flex items-center space-x-2 text-[10px] text-gray-500 font-mono">
-                      <span>LH: {t.lineHeight}</span>
-                      <span>•</span>
-                      <span>LS: {t.letterSpacing}</span>
-                      <span>•</span>
-                      <span className="bg-gray-100 text-gray-700 font-semibold px-1.5 py-0.5 rounded">
-                        {t.usageCount} uses
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Real-time styled visual preview */}
+                return (
                   <div
-                    style={{
-                      fontFamily: `'${t.fontFamily}', sans-serif`,
-                      fontSize: `${Math.min(28, Math.max(12, t.fontSize))}px`,
-                      fontWeight: t.fontWeight,
-                      lineHeight: 1.25,
-                    }}
-                    className="text-gray-800 truncate select-text"
+                    key={itemKey}
+                    className="p-3 hover:bg-gray-50/80 transition-colors space-y-1.5 group"
                   >
-                    {sampleText || 'The quick brown fox jumps over the lazy dog'}
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-mono font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 text-[11px]">
+                          {t.fontSize}px
+                        </span>
+                        <span className="font-semibold text-gray-900">
+                          {t.fontFamily} {t.fontStyle} ({t.fontWeight})
+                        </span>
+                        {t.name && (
+                          <span className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-mono">
+                            {t.name}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center space-x-2 text-[10px] text-gray-500 font-mono">
+                        <span>LH: {t.lineHeight}</span>
+                        <span>•</span>
+                        <span>LS: {t.letterSpacing}</span>
+                        <span>•</span>
+                        <span className="bg-gray-100 text-gray-700 font-semibold px-1.5 py-0.5 rounded">
+                          {t.usageCount} uses
+                        </span>
+                        <button
+                          onClick={() => handleCopySingleTypography(t, itemKey)}
+                          title="Copy CSS font properties"
+                          className={`px-1.5 py-0.5 rounded border transition-colors ${
+                            isItemCopied
+                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300 font-bold'
+                              : 'bg-white text-gray-500 hover:text-blue-600 border-gray-200 hover:border-blue-300'
+                          }`}
+                        >
+                          {isItemCopied ? '✓ Copied' : 'Copy CSS'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Real-time styled visual preview */}
+                    <div
+                      style={{
+                        fontFamily: `'${t.fontFamily}', sans-serif`,
+                        fontSize: `${Math.min(28, Math.max(12, t.fontSize))}px`,
+                        fontWeight: t.fontWeight,
+                        lineHeight: 1.25,
+                      }}
+                      className="text-gray-800 truncate select-text"
+                    >
+                      {sampleText || 'The quick brown fox jumps over the lazy dog'}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -194,9 +233,15 @@ export const TypographyExportTab: React.FC<Props> = ({ typography, isScanning })
               <div className="flex items-center space-x-1.5">
                 <button
                   onClick={handleCopy}
-                  className="px-2.5 py-1 text-xs border border-gray-300 rounded hover:bg-gray-50 transition-colors text-gray-700 font-medium"
+                  title="Copy full typography tokens to clipboard"
+                  className={`px-3 py-1 text-xs rounded transition-all font-semibold flex items-center space-x-1 shadow-xs ${
+                    copied
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-blue-600 hover:bg-blue-700 text-white'
+                  }`}
                 >
-                  {copied ? 'Copied!' : 'Copy'}
+                  <span>{copied ? '✓' : '📋'}</span>
+                  <span>{copied ? 'Copied!' : 'Copy'}</span>
                 </button>
                 <button
                   onClick={handleDownload}
@@ -216,4 +261,3 @@ export const TypographyExportTab: React.FC<Props> = ({ typography, isScanning })
     </div>
   );
 };
-

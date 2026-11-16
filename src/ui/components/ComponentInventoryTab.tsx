@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ComponentCategory, ComponentCluster } from '../../main/types';
+import { copyTextToClipboard } from '../utils/clipboard';
 
 interface Props {
   components: ComponentCluster[];
@@ -26,31 +27,6 @@ const CATEGORY_BADGES: Record<ComponentCategory, { bg: string; text: string; bor
   row_item: { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200' },
   other: { bg: 'bg-gray-50', text: 'text-gray-700', border: 'border-gray-200' },
 };
-
-async function copyToClipboard(text: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {}
-
-  try {
-    const textarea = document.createElement('textarea');
-    textarea.value = text;
-    textarea.style.position = 'fixed';
-    textarea.style.left = '-9999px';
-    textarea.style.top = '-9999px';
-    document.body.appendChild(textarea);
-    textarea.focus();
-    textarea.select();
-    const successful = document.execCommand('copy');
-    document.body.removeChild(textarea);
-    return successful;
-  } catch {
-    return false;
-  }
-}
 
 function generateComponentCss(cluster: ComponentCluster): string {
   const p = cluster.instances[0].properties;
@@ -158,7 +134,7 @@ export const ComponentInventoryTab: React.FC<Props> = ({
 
   const handleCopyCss = async (cluster: ComponentCluster) => {
     const css = generateComponentCss(cluster);
-    const ok = await copyToClipboard(css);
+    const ok = await copyTextToClipboard(css);
     if (ok) {
       setCopiedCssId(cluster.clusterId);
       setTimeout(() => setCopiedCssId(null), 2000);

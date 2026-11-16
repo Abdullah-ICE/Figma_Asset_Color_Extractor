@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ExtractedColor } from '../../main/types';
+import { copyTextToClipboard } from '../utils/clipboard';
 import {
   generateCssVariables,
   generateDesignTokensJson,
@@ -15,6 +16,7 @@ interface Props {
 export const ColorExportTab: React.FC<Props> = ({ colors, isScanning }) => {
   const [tokenFormat, setTokenFormat] = useState<'css' | 'tailwind' | 'scss' | 'json'>('css');
   const [copied, setCopied] = useState<boolean>(false);
+  const [copiedHex, setCopiedHex] = useState<string | null>(null);
 
   const getCode = () => {
     switch (tokenFormat) {
@@ -29,10 +31,20 @@ export const ColorExportTab: React.FC<Props> = ({ colors, isScanning }) => {
     }
   };
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(getCode());
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async () => {
+    const ok = await copyTextToClipboard(getCode());
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const handleCopySingleColor = async (hex: string) => {
+    const ok = await copyTextToClipboard(hex);
+    if (ok) {
+      setCopiedHex(hex);
+      setTimeout(() => setCopiedHex(null), 1500);
+    }
   };
 
   const handleDownload = () => {
@@ -78,25 +90,41 @@ export const ColorExportTab: React.FC<Props> = ({ colors, isScanning }) => {
           {/* 2. Color Swatch Grid */}
           <div className="border border-[var(--figma-color-border,#e5e7eb)] rounded-lg p-2 max-h-44 overflow-y-auto bg-[var(--figma-color-bg,#ffffff)]">
             <div className="grid grid-cols-2 gap-2 text-xs">
-              {colors.map((c, idx) => (
-                <div
-                  key={`${c.hex}-${idx}`}
-                  className="flex items-center space-x-2.5 p-1.5 rounded border border-gray-100 hover:bg-gray-50 transition-colors"
-                >
+              {colors.map((c, idx) => {
+                const isItemCopied = copiedHex === c.hex;
+                return (
                   <div
-                    className="w-7 h-7 rounded border border-gray-300 shadow-inner flex-shrink-0"
-                    style={{ backgroundColor: c.hex }}
-                  />
-                  <div className="truncate flex-1 min-w-0">
-                    <span className="font-mono font-semibold text-[11px] text-[var(--figma-color-text,#111827)] block">
-                      {c.hex}
-                    </span>
-                    <span className="text-[10px] text-gray-400 block truncate">
-                      {c.name || (c.usageCount > 0 ? `${c.usageCount} uses` : 'Unused')}
-                    </span>
+                    key={`${c.hex}-${idx}`}
+                    onClick={() => handleCopySingleColor(c.hex)}
+                    title="Click to copy hex code to clipboard"
+                    className="flex items-center space-x-2.5 p-1.5 rounded border border-gray-100 hover:bg-gray-50 hover:border-blue-300 transition-all cursor-pointer group"
+                  >
+                    <div
+                      className="w-7 h-7 rounded border border-gray-300 shadow-inner flex-shrink-0"
+                      style={{ backgroundColor: c.hex }}
+                    />
+                    <div className="truncate flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono font-semibold text-[11px] text-[var(--figma-color-text,#111827)]">
+                          {c.hex}
+                        </span>
+                        <span
+                          className={`text-[9px] px-1 py-0.2 rounded transition-opacity ${
+                            isItemCopied
+                              ? 'bg-emerald-100 text-emerald-800 font-bold opacity-100'
+                              : 'text-gray-400 group-hover:text-blue-600 opacity-0 group-hover:opacity-100'
+                          }`}
+                        >
+                          {isItemCopied ? '✓ Copied' : 'Copy'}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-gray-400 block truncate">
+                        {c.name || (c.usageCount > 0 ? `${c.usageCount} uses` : 'Unused')}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -110,7 +138,7 @@ export const ColorExportTab: React.FC<Props> = ({ colors, isScanning }) => {
                     onClick={() => setTokenFormat(fmt)}
                     className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${
                       tokenFormat === fmt
-                        ? 'bg-blue-600 text-white'
+                        ? 'bg-blue-600 text-white font-semibold'
                         : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                     }`}
                   >
@@ -122,9 +150,15 @@ export const ColorExportTab: React.FC<Props> = ({ colors, isScanning }) => {
               <div className="flex items-center space-x-1.5">
                 <button
                   onClick={handleCopy}
-                  className="px-2.5 py-1 text-xs border border-gray-300 rounded hover:bg-gray-50 transition-colors text-gray-700 font-medium"
+                  title="Copy full tokens code to clipboard"
+                  className={`px-3 py-1 text-xs rounded transition-all font-semibold flex items-center space-x-1 shadow-xs ${
+                    copied
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-blue-600 hover:bg-blue-700 text-white'
+                  }`}
                 >
-                  {copied ? 'Copied!' : 'Copy'}
+                  <span>{copied ? '✓' : '📋'}</span>
+                  <span>{copied ? 'Copied!' : 'Copy'}</span>
                 </button>
                 <button
                   onClick={handleDownload}
@@ -135,7 +169,7 @@ export const ColorExportTab: React.FC<Props> = ({ colors, isScanning }) => {
               </div>
             </div>
 
-            <pre className="p-3 bg-gray-900 text-gray-100 rounded-lg text-[11px] font-mono max-h-48 overflow-auto border border-gray-800 leading-relaxed">
+            <pre className="p-3 bg-gray-900 text-gray-100 rounded-lg text-[11px] font-mono max-h-48 overflow-auto border border-gray-800 leading-relaxed select-text">
               <code>{getCode()}</code>
             </pre>
           </div>
@@ -144,4 +178,3 @@ export const ColorExportTab: React.FC<Props> = ({ colors, isScanning }) => {
     </div>
   );
 };
-
