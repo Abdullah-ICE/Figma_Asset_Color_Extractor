@@ -24,7 +24,9 @@ export const ColorExportTab: React.FC<Props> = ({ colors, isScanning }) => {
   const [tokenFormat, setTokenFormat] = useState<'css' | 'tailwind' | 'scss' | 'json'>('css');
   const [selectedScreen, setSelectedScreen] = useState<string>('all');
   const [selectedRole, setSelectedRole] = useState<string>('all');
-  const [strictMode, setStrictMode] = useState<boolean>(true);
+  const [minUsage, setMinUsage] = useState<number>(1); // 1 = keep all real colors, 2 = exclude 1-offs
+  const [includeTokens, setIncludeTokens] = useState<boolean>(true); // keep global design tokens in screen view
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
   const [copiedHex, setCopiedHex] = useState<string | null>(null);
 
@@ -41,29 +43,39 @@ export const ColorExportTab: React.FC<Props> = ({ colors, isScanning }) => {
     return Array.from(screens).sort();
   }, [colors]);
 
-  // Filtered colors based on Strict Mode, Screen Scope, and Role
+  // Strict & Safe Filter: Guaranteed NO accidental drops of essential colors
   const filteredColors = useMemo(() => {
     return colors.filter(c => {
-      // 1. Strict Developer Mode Filter:
-      // Exclude raw one-off noise colors with usageCount < 2 and no style/variable name
-      if (strictMode) {
-        if (c.source === 'raw_node' && c.usageCount < 2 && !c.name) {
-          return false;
-        }
-        if (!c.roles || c.roles.length === 0) {
-          return false;
-        }
+      // 1. Search Query Filter (hex, name, or role)
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const matchHex = c.hex.toLowerCase().includes(q);
+        const matchName = c.name ? c.name.toLowerCase().includes(q) : false;
+        const matchRole = c.roles ? c.roles.some(r => r.toLowerCase().includes(q)) : false;
+        if (!matchHex && !matchName && !matchRole) return false;
       }
 
-      // 2. Screen Scope Filter:
+      // 2. Minimum Usage Threshold:
+      // If minUsage > 1, only apply to raw un-named nodes; NEVER drop official tokens!
+      const isToken = c.source === 'style' || c.source === 'variable' || (c.roles && c.roles.includes('token'));
+      if (!isToken && c.usageCount < minUsage && !c.name) {
+        return false;
+      }
+
+      // 3. Screen Scope Filter:
       if (selectedScreen !== 'all') {
         const appearsOnScreen = c.screenNames && c.screenNames.includes(selectedScreen);
+        // If it's a global design token and includeTokens is enabled, keep it available
         if (!appearsOnScreen) {
-          return false;
+          if (isToken && includeTokens) {
+            // Keep token
+          } else {
+            return false;
+          }
         }
       }
 
-      // 3. Role Filter:
+      // 4. Role Filter:
       if (selectedRole !== 'all') {
         if (!c.roles || !c.roles.includes(selectedRole as ColorRole)) {
           return false;
@@ -72,17 +84,21 @@ export const ColorExportTab: React.FC<Props> = ({ colors, isScanning }) => {
 
       return true;
     });
-  }, [colors, strictMode, selectedScreen, selectedRole]);
+  }, [colors, selectedScreen, selectedRole, minUsage, includeTokens, searchQuery]);
 
-  // Role Counts (based on current strictMode and screen filter)
+  // Role Counts based on current screen & usage filter
   const roleCounts = useMemo(() => {
     const counts: Record<string, number> = { all: 0, token: 0, surface: 0, text: 0, border: 0 };
     for (const c of colors) {
-      if (strictMode && c.source === 'raw_node' && c.usageCount < 2 && !c.name) {
+      const isToken = c.source === 'style' || c.source === 'variable' || (c.roles && c.roles.includes('token'));
+      if (!isToken && c.usageCount < minUsage && !c.name) {
         continue;
       }
-      if (selectedScreen !== 'all' && (!c.screenNames || !c.screenNames.includes(selectedScreen))) {
-        continue;
+      if (selectedScreen !== 'all') {
+        const appearsOnScreen = c.screenNames && c.screenNames.includes(selectedScreen);
+        if (!appearsOnScreen && !(isToken && includeTokens)) {
+          continue;
+        }
       }
       counts.all++;
       if (c.roles) {
@@ -92,7 +108,7 @@ export const ColorExportTab: React.FC<Props> = ({ colors, isScanning }) => {
       }
     }
     return counts;
-  }, [colors, strictMode, selectedScreen]);
+  }, [colors, selectedScreen, minUsage, includeTokens]);
 
   const getCode = () => {
     switch (tokenFormat) {
@@ -148,65 +164,101 @@ export const ColorExportTab: React.FC<Props> = ({ colors, isScanning }) => {
         </div>
       ) : (
         <>
-          {/* 1. Header Toolbar: Developer Scope & Strict Mode */}
+          {/* 1. Header Toolbar: Scope, Search & Usage Filter */}
           <div className="bg-[var(--figma-color-bg-secondary,#f9fafb)] p-3 rounded-lg border border-[var(--figma-color-border,#e5e7eb)] space-y-2.5 text-xs">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div>
                 <span className="font-bold text-gray-900 block text-sm">
-                  {filteredColors.length} Developer Colors
+                  {filteredColors.length} Verified Developer Colors
                   {selectedScreen !== 'all' && (
-                    <span className="font-normal text-gray-500 ml-1 text-xs">
+                    <span className="font-semibold text-blue-600 ml-1 text-xs">
                       on &quot;{selectedScreen}&quot;
                     </span>
                   )}
                 </span>
                 <span className="text-[10px] text-gray-500">
-                  Strictly filtered: Text colors, Button &amp; Surface backgrounds, Borders &amp; Design Tokens (No Icon/Vector clutter)
+                  Zero icon vector clutter. Every real button background, text color &amp; design token is preserved.
                 </span>
               </div>
 
-              {/* Strict Dev Mode Toggle */}
-              <button
-                onClick={() => setStrictMode(!strictMode)}
-                className={`px-2.5 py-1 text-[11px] rounded-md font-semibold flex items-center space-x-1.5 transition-all border ${
-                  strictMode
-                    ? 'bg-emerald-50 border-emerald-300 text-emerald-800 shadow-xs'
-                    : 'bg-gray-100 border-gray-300 text-gray-600 hover:bg-gray-200'
-                }`}
-                title="When ON: Excludes 1-off noise colors and non-developer vector colors"
-              >
-                <span>{strictMode ? '🛡️ Strict Dev Mode: ON' : '⚙️ Strict Dev Mode: OFF'}</span>
-              </button>
+              {/* Usage Threshold Filter */}
+              <div className="flex items-center space-x-1.5 bg-white border border-gray-200 rounded px-2 py-0.5 shadow-2xs">
+                <span className="text-[10px] text-gray-500 font-medium">Min Usage:</span>
+                <button
+                  onClick={() => setMinUsage(1)}
+                  className={`px-1.5 py-0.2 rounded text-[10px] font-semibold transition-colors ${
+                    minUsage === 1 ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                  title="Include all used colors (even 1-off CTA buttons or single error texts)"
+                >
+                  All (≥1)
+                </button>
+                <button
+                  onClick={() => setMinUsage(2)}
+                  className={`px-1.5 py-0.2 rounded text-[10px] font-semibold transition-colors ${
+                    minUsage === 2 ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                  title="Exclude 1-off accidental canvas colors"
+                >
+                  Frequent (≥2)
+                </button>
+              </div>
             </div>
 
-            {/* Scope / Screen Selector Dropdown */}
-            {allScreens.length > 0 && (
-              <div className="flex items-center space-x-2 pt-1 border-t border-gray-200">
-                <span className="text-[11px] font-semibold text-gray-600 flex-shrink-0">
-                  🎯 Screen Scope:
-                </span>
-                <select
-                  value={selectedScreen}
-                  onChange={e => setSelectedScreen(e.target.value)}
-                  className="bg-white border border-gray-300 rounded px-2 py-0.5 text-xs text-gray-800 font-medium focus:ring-1 focus:ring-blue-500 focus:outline-none flex-1 max-w-xs"
-                >
-                  <option value="all">🌐 All Screens ({allScreens.length} artboards)</option>
-                  {allScreens.map(scr => (
-                    <option key={scr} value={scr}>
-                      {scr}
-                    </option>
-                  ))}
-                </select>
-                {selectedScreen !== 'all' && (
-                  <button
-                    onClick={() => setSelectedScreen('all')}
-                    className="text-[10px] text-blue-600 hover:underline font-medium"
+            {/* Scope / Screen Selector & Search Bar */}
+            <div className="flex items-center gap-2 pt-1 border-t border-gray-200 flex-wrap">
+              {allScreens.length > 0 && (
+                <div className="flex items-center space-x-1.5 flex-1 min-w-[200px]">
+                  <span className="text-[11px] font-semibold text-gray-600 flex-shrink-0">
+                    🎯 Screen:
+                  </span>
+                  <select
+                    value={selectedScreen}
+                    onChange={e => setSelectedScreen(e.target.value)}
+                    className="bg-white border border-gray-300 rounded px-2 py-1 text-xs text-gray-800 font-medium focus:ring-1 focus:ring-blue-500 focus:outline-none flex-1"
                   >
-                    Reset Scope
+                    <option value="all">🌐 All Screens ({allScreens.length} total)</option>
+                    {allScreens.map(scr => (
+                      <option key={scr} value={scr}>
+                        {scr}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Quick Search */}
+              <div className="relative w-36 sm:w-44">
+                <input
+                  type="text"
+                  placeholder="Search hex, name..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-full bg-white border border-gray-300 rounded pl-6 pr-2 py-1 text-xs placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+                <span className="absolute left-1.5 top-1.5 text-gray-400 text-[10px]">🔍</span>
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-1.5 top-1 text-gray-400 hover:text-gray-600 font-bold text-xs"
+                  >
+                    ×
                   </button>
                 )}
               </div>
-            )}
+
+              {selectedScreen !== 'all' && (
+                <label className="flex items-center space-x-1 text-[10px] text-gray-600 cursor-pointer ml-auto">
+                  <input
+                    type="checkbox"
+                    checked={includeTokens}
+                    onChange={e => setIncludeTokens(e.target.checked)}
+                    className="rounded text-blue-600 focus:ring-0"
+                  />
+                  <span>Show Tokens</span>
+                </label>
+              )}
+            </div>
           </div>
 
           {/* 2. Role Filter Chips */}
@@ -267,7 +319,7 @@ export const ColorExportTab: React.FC<Props> = ({ colors, isScanning }) => {
           <div className="border border-[var(--figma-color-border,#e5e7eb)] rounded-lg p-2 max-h-48 overflow-y-auto bg-[var(--figma-color-bg,#ffffff)]">
             {filteredColors.length === 0 ? (
               <div className="text-center py-6 text-gray-400 text-xs">
-                No colors match the current filter or screen.
+                No colors match the current search or filter.
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-2 text-xs">

@@ -17,6 +17,11 @@ function getTopLevelScreenName(node: SceneNode): string {
   let curr: BaseNode | null = node;
   let topScreen = node.name;
   while (curr && curr.parent && curr.parent.type !== 'PAGE' && curr.parent.type !== 'DOCUMENT') {
+    // If parent is a section, the artboard/screen is this curr node
+    if (curr.parent.type === 'SECTION') {
+      if ('name' in curr) topScreen = (curr as SceneNode).name;
+      break;
+    }
     curr = curr.parent;
     if ('name' in curr) {
       topScreen = (curr as SceneNode).name;
@@ -152,6 +157,7 @@ export function extractProjectColors(rootNodes: readonly SceneNode[]): Extracted
     for (const paint of paints) {
       if (paint.type === 'SOLID' && paint.visible !== false) {
         const alpha = paint.opacity ?? 1;
+        if (alpha < 0.01) continue; // Skip completely invisible/transparent alpha
         const hex = figmaColorToHex(paint.color, alpha);
         const existing = colorMap.get(hex);
 

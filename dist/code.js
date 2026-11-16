@@ -287,6 +287,10 @@
     let curr = node;
     let topScreen = node.name;
     while (curr && curr.parent && curr.parent.type !== "PAGE" && curr.parent.type !== "DOCUMENT") {
+      if (curr.parent.type === "SECTION") {
+        if ("name" in curr) topScreen = curr.name;
+        break;
+      }
       curr = curr.parent;
       if ("name" in curr) {
         topScreen = curr.name;
@@ -391,6 +395,7 @@
       for (const paint of paints) {
         if (paint.type === "SOLID" && paint.visible !== false) {
           const alpha = paint.opacity ?? 1;
+          if (alpha < 0.01) continue;
           const hex = figmaColorToHex(paint.color, alpha);
           const existing = colorMap.get(hex);
           if (existing) {
