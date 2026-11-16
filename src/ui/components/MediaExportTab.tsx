@@ -11,28 +11,49 @@ interface Props {
 
 const MEDIA_TYPE_BADGES: Record<MediaType, { label: string; icon: string; bg: string; text: string; border: string }> = {
   video_mp4: {
-    label: 'MP4 Video',
+    label: 'Video',
     icon: '🎥',
     bg: 'bg-rose-50',
     text: 'text-rose-700',
     border: 'border-rose-200',
   },
   lottie_json: {
-    label: 'Lottie JSON',
+    label: 'Animation',
     icon: '✨',
     bg: 'bg-amber-50',
     text: 'text-amber-700',
     border: 'border-amber-200',
   },
   image: {
-    label: 'Image / Graphic',
+    label: 'Image',
     icon: '🖼️',
     bg: 'bg-sky-50',
     text: 'text-sky-700',
     border: 'border-sky-200',
   },
+  audio: {
+    label: 'Audio',
+    icon: '🔊',
+    bg: 'bg-emerald-50',
+    text: 'text-emerald-700',
+    border: 'border-emerald-200',
+  },
+  '3d_model': {
+    label: '3D Model',
+    icon: '🧊',
+    bg: 'bg-indigo-50',
+    text: 'text-indigo-700',
+    border: 'border-indigo-200',
+  },
+  document: {
+    label: 'Document',
+    icon: '📄',
+    bg: 'bg-violet-50',
+    text: 'text-violet-700',
+    border: 'border-violet-200',
+  },
   other: {
-    label: 'Media File',
+    label: 'File',
     icon: '📁',
     bg: 'bg-gray-50',
     text: 'text-gray-700',
@@ -55,7 +76,7 @@ export const MediaExportTab: React.FC<Props> = ({
 
   // Count by media type
   const counts = React.useMemo(() => {
-    const res: Record<string, number> = { all: media.length, video_mp4: 0, lottie_json: 0, image: 0 };
+    const res: Record<string, number> = { all: media.length };
     for (const m of media) {
       res[m.mediaType] = (res[m.mediaType] || 0) + 1;
     }
@@ -137,9 +158,9 @@ export const MediaExportTab: React.FC<Props> = ({
     <div className="space-y-3">
       {media.length === 0 ? (
         <div className="text-center py-12 border-2 border-dashed border-[var(--figma-color-border,#e5e7eb)] rounded-lg text-xs text-gray-500 space-y-1">
-          <p className="font-semibold text-gray-700">No Embedded Media Files Detected</p>
+          <p className="font-semibold text-gray-700">No Embedded Media or Files Detected</p>
           <p className="text-[11px] text-gray-400">
-            Click &quot;Scan for Icons&quot; on the Icons tab to scan for embedded MP4 videos, Lottie animations, and graphic files.
+            Click &quot;Scan for Icons&quot; on the Icons tab to auto-scan for embedded MP4 videos, Lottie animations, documents, audio, and graphic files.
           </p>
         </div>
       ) : (
@@ -148,10 +169,10 @@ export const MediaExportTab: React.FC<Props> = ({
           <div className="bg-[var(--figma-color-bg-secondary,#f9fafb)] p-3 rounded-lg border border-[var(--figma-color-border,#e5e7eb)] flex items-center justify-between flex-wrap gap-2 text-xs">
             <div>
               <span className="font-bold text-gray-900 block text-sm">
-                {media.length} Embedded Media Assets Found
+                {media.length} Embedded Files &amp; Media Assets Found
               </span>
               <span className="text-[10px] text-gray-500">
-                {counts.video_mp4} MP4 Videos • {counts.lottie_json} Lottie Animations • {counts.image} Images
+                Videos, Lottie Animations, Audio, 3D, Images &amp; Documents detected across project
               </span>
             </div>
 
@@ -187,7 +208,7 @@ export const MediaExportTab: React.FC<Props> = ({
             <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 text-xs">
               <button
                 onClick={() => setSelectedFilter('all')}
-                className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors ${
+                className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors whitespace-nowrap ${
                   selectedFilter === 'all'
                     ? 'bg-gray-900 text-white'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -195,51 +216,33 @@ export const MediaExportTab: React.FC<Props> = ({
               >
                 All ({counts.all})
               </button>
-              {counts.video_mp4 > 0 && (
-                <button
-                  onClick={() => setSelectedFilter('video_mp4')}
-                  className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors flex items-center space-x-1 ${
-                    selectedFilter === 'video_mp4'
-                      ? 'bg-rose-600 text-white'
-                      : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
-                  }`}
-                >
-                  <span>🎥 MP4 Video ({counts.video_mp4})</span>
-                </button>
-              )}
-              {counts.lottie_json > 0 && (
-                <button
-                  onClick={() => setSelectedFilter('lottie_json')}
-                  className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors flex items-center space-x-1 ${
-                    selectedFilter === 'lottie_json'
-                      ? 'bg-amber-600 text-white'
-                      : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
-                  }`}
-                >
-                  <span>✨ Lottie JSON ({counts.lottie_json})</span>
-                </button>
-              )}
-              {counts.image > 0 && (
-                <button
-                  onClick={() => setSelectedFilter('image')}
-                  className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors flex items-center space-x-1 ${
-                    selectedFilter === 'image'
-                      ? 'bg-sky-600 text-white'
-                      : 'bg-sky-50 text-sky-700 hover:bg-sky-100'
-                  }`}
-                >
-                  <span>🖼️ Images ({counts.image})</span>
-                </button>
-              )}
+              {(Object.keys(MEDIA_TYPE_BADGES) as MediaType[]).map(typeKey => {
+                const count = counts[typeKey] || 0;
+                if (count === 0) return null;
+                const badge = MEDIA_TYPE_BADGES[typeKey];
+                return (
+                  <button
+                    key={typeKey}
+                    onClick={() => setSelectedFilter(typeKey)}
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors whitespace-nowrap flex items-center space-x-1 ${
+                      selectedFilter === typeKey
+                        ? 'bg-gray-900 text-white'
+                        : `${badge.bg} ${badge.text} hover:opacity-80`
+                    }`}
+                  >
+                    <span>{badge.icon} {badge.label} ({count})</span>
+                  </button>
+                );
+              })}
             </div>
 
             <div className="relative">
               <input
                 type="text"
-                placeholder="Search file name, screen..."
+                placeholder="Search file name, format, screen..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                className="w-full sm:w-52 px-2.5 py-1 text-xs border border-gray-300 rounded-md focus:outline-hidden focus:ring-1 focus:ring-blue-500"
+                className="w-full sm:w-56 px-2.5 py-1 text-xs border border-gray-300 rounded-md focus:outline-hidden focus:ring-1 focus:ring-blue-500"
               />
               {searchQuery && (
                 <button
@@ -265,13 +268,13 @@ export const MediaExportTab: React.FC<Props> = ({
                 <span className="font-medium text-gray-700">Select All Filtered</span>
               </label>
 
-              <span>Showing {filteredMedia.length} media files</span>
+              <span>Showing {filteredMedia.length} files</span>
             </div>
 
             <div className="border border-[var(--figma-color-border,#e5e7eb)] rounded-lg divide-y divide-gray-100 bg-white max-h-[460px] overflow-y-auto">
               {filteredMedia.length === 0 ? (
                 <div className="text-center py-8 text-xs text-gray-400">
-                  No media matching your search criteria.
+                  No files matching your search criteria.
                 </div>
               ) : (
                 filteredMedia.map((m, idx) => {
@@ -368,7 +371,7 @@ export const MediaExportTab: React.FC<Props> = ({
                   <span>⚠️ Confirm Canvas Deletion</span>
                 </div>
                 <p className="text-xs text-gray-600 leading-relaxed">
-                  Are you sure you want to permanently delete <b>{targetDeleteIds.length}</b> media layer(s) from your Figma canvas? This helps clean up heavy files, but cannot be undone inside the plugin.
+                  Are you sure you want to permanently delete <b>{targetDeleteIds.length}</b> layer(s) from your Figma canvas? This helps clean up heavy files, but cannot be undone inside the plugin.
                 </p>
                 <div className="flex items-center justify-end space-x-2 pt-2 border-t border-gray-100">
                   <button

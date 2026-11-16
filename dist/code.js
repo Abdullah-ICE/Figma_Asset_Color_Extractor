@@ -123,6 +123,40 @@
     }
     return topScreen;
   }
+  var EXTENSION_MAP = {
+    // Video
+    mp4: { type: "video_mp4", label: "MP4 Video" },
+    mov: { type: "video_mp4", label: "QuickTime Video" },
+    webm: { type: "video_mp4", label: "WebM Video" },
+    // Animations
+    json: { type: "lottie_json", label: "Lottie JSON" },
+    riv: { type: "lottie_json", label: "Rive Animation" },
+    gif: { type: "image", label: "Animated GIF" },
+    // Audio
+    mp3: { type: "audio", label: "MP3 Audio" },
+    wav: { type: "audio", label: "WAV Audio" },
+    ogg: { type: "audio", label: "OGG Audio" },
+    m4a: { type: "audio", label: "M4A Audio" },
+    // 3D
+    gltf: { type: "3d_model", label: "glTF 3D Model" },
+    glb: { type: "3d_model", label: "GLB 3D Binary" },
+    obj: { type: "3d_model", label: "OBJ 3D Model" },
+    usdz: { type: "3d_model", label: "USDZ 3D Model" },
+    // Documents & Data
+    pdf: { type: "document", label: "PDF Document" },
+    csv: { type: "document", label: "CSV Spreadsheet" },
+    xml: { type: "document", label: "XML Data" },
+    txt: { type: "document", label: "Text File" },
+    zip: { type: "document", label: "ZIP Archive" },
+    xlsx: { type: "document", label: "Excel Sheet" },
+    docx: { type: "document", label: "Word Document" },
+    // Images
+    png: { type: "image", label: "PNG Image" },
+    jpg: { type: "image", label: "JPEG Image" },
+    jpeg: { type: "image", label: "JPEG Image" },
+    webp: { type: "image", label: "WebP Image" },
+    svg: { type: "image", label: "SVG Vector" }
+  };
   function scanForMedia(rootNodes, pageName) {
     const mediaList = [];
     const visited = /* @__PURE__ */ new Set();
@@ -130,12 +164,13 @@
       if (!node.visible || visited.has(node.id)) return;
       visited.add(node.id);
       let detectedAsMedia = false;
+      const cleanName = node.name.trim();
       if ("fills" in node && Array.isArray(node.fills)) {
         for (const fill of node.fills) {
           if (fill.type === "VIDEO" && fill.visible !== false && fill.videoHash) {
             mediaList.push({
               id: node.id,
-              name: node.name || "Video",
+              name: cleanName || "Video",
               mediaType: "video_mp4",
               format: "mp4",
               width: Math.round(node.width),
@@ -168,14 +203,10 @@
           }
         } catch {
         }
-        const lowerName = node.name.toLowerCase();
-        if (!isLottie && (lowerName.endsWith(".json") || lowerName.includes("lottie"))) {
-          isLottie = true;
-        }
         if (isLottie) {
           mediaList.push({
             id: node.id,
-            name: node.name.replace(/\.json$/i, ""),
+            name: cleanName.replace(/\.json$/i, ""),
             mediaType: "lottie_json",
             format: "json",
             width: Math.round(node.width),
@@ -188,13 +219,32 @@
           detectedAsMedia = true;
         }
       }
+      if (!detectedAsMedia) {
+        const matchExt = cleanName.match(/\.([a-zA-Z0-9]{2,5})$/);
+        if (matchExt) {
+          const ext = matchExt[1].toLowerCase();
+          const info = EXTENSION_MAP[ext] || { type: "other", label: `${ext.toUpperCase()} File` };
+          mediaList.push({
+            id: node.id,
+            name: cleanName,
+            mediaType: info.type,
+            format: ext,
+            width: Math.round(node.width),
+            height: Math.round(node.height),
+            pageName,
+            screenName: getTopLevelScreenName2(node),
+            sizeEstimate: info.label
+          });
+          detectedAsMedia = true;
+        }
+      }
       if (!detectedAsMedia && "fills" in node && Array.isArray(node.fills)) {
         const isLargeEnough = node.width >= 56 && node.height >= 56;
         for (const fill of node.fills) {
           if (fill.type === "IMAGE" && fill.visible !== false && fill.imageHash && isLargeEnough) {
             mediaList.push({
               id: node.id,
-              name: node.name || "Image",
+              name: cleanName || "Image",
               mediaType: "image",
               format: "png",
               width: Math.round(node.width),

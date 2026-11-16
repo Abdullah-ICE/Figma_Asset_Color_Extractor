@@ -24,7 +24,7 @@ export interface DeduplicatedIconGroup {
   svgPreview?: string;
 }
 
-export type MediaType = 'video_mp4' | 'lottie_json' | 'image' | 'other';
+export type MediaType = 'video_mp4' | 'lottie_json' | 'image' | 'audio' | '3d_model' | 'document' | 'other';
 
 export interface DetectedMedia {
   id: string;
