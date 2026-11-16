@@ -1042,59 +1042,86 @@
         const ids = msg.ids;
         for (let i = 0; i < ids.length; i++) {
           const id = ids[i];
-          const node = figma.getNodeById(id);
-          if (!node) continue;
-          let bytes = null;
-          let filename = `${node.name || "media"}.png`;
-          if ("fills" in node && Array.isArray(node.fills)) {
-            for (const fill of node.fills) {
-              if (fill.type === "VIDEO" && fill.videoHash) {
-                const video = figma.getVideoByHash(fill.videoHash);
-                if (video) {
-                  bytes = await video.getBytesAsync();
-                  filename = `${node.name || "video"}.mp4`;
-                  break;
-                }
-              } else if (fill.type === "IMAGE" && fill.imageHash) {
-                const image = figma.getImageByHash(fill.imageHash);
-                if (image) {
-                  bytes = await image.getBytesAsync();
-                  filename = `${node.name || "image"}.png`;
-                  break;
+          try {
+            const node = figma.getNodeById(id);
+            if (!node) continue;
+            let bytes = null;
+            let filename = `${node.name || "media"}.png`;
+            if ("fills" in node && Array.isArray(node.fills)) {
+              for (const fill of node.fills) {
+                if (fill.type === "IMAGE" && fill.imageHash) {
+                  try {
+                    const image = figma.getImageByHash(fill.imageHash);
+                    if (image) {
+                      bytes = await image.getBytesAsync();
+                      filename = `${node.name || "image"}.png`;
+                      break;
+                    }
+                  } catch {
+                  }
+                } else if (fill.type === "VIDEO" && fill.videoHash) {
+                  if (typeof figma.getVideoByHash === "function") {
+                    try {
+                      const video = figma.getVideoByHash(fill.videoHash);
+                      if (video) {
+                        bytes = await video.getBytesAsync();
+                        filename = `${node.name || "video"}.mp4`;
+                        break;
+                      }
+                    } catch {
+                    }
+                  }
+                  if (!bytes) {
+                    try {
+                      bytes = await node.exportAsync({ format: "MP4" });
+                      filename = `${node.name || "video"}.mp4`;
+                      break;
+                    } catch {
+                    }
+                  }
                 }
               }
             }
-          }
-          if (!bytes) {
-            try {
-              const keys = node.getPluginDataKeys();
-              for (const key of keys) {
-                const val = node.getPluginData(key);
-                if (val && val.startsWith("{")) {
-                  bytes = new TextEncoder().encode(val);
-                  filename = `${node.name || "animation"}.json`;
-                  break;
+            if (!bytes) {
+              try {
+                const keys = node.getPluginDataKeys();
+                for (const key of keys) {
+                  const val = node.getPluginData(key);
+                  if (val && val.startsWith("{")) {
+                    bytes = new TextEncoder().encode(val);
+                    filename = `${node.name || "animation"}.json`;
+                    break;
+                  }
                 }
+              } catch {
               }
-            } catch {
             }
-          }
-          if (!bytes) {
-            bytes = await node.exportAsync({ format: "PNG", constraint: { type: "SCALE", value: 2 } });
-            filename = `${node.name || "asset"}.png`;
-          }
-          if (bytes) {
-            figma.ui.postMessage({
-              type: "MEDIA_EXPORT_CHUNK",
-              current: i + 1,
-              total: ids.length,
-              item: {
-                id,
-                name: node.name,
-                filename: filename.replace(/[/\\?%*:|"<>]/g, "-"),
-                bytes: Array.from(bytes)
+            if (!bytes) {
+              try {
+                bytes = await node.exportAsync({
+                  format: "PNG",
+                  constraint: { type: "SCALE", value: 2 }
+                });
+                filename = `${node.name || "asset"}.png`;
+              } catch (err) {
+                console.warn(`Could not export node ${node.name}:`, err);
               }
-            });
+            }
+            if (bytes) {
+              figma.ui.postMessage({
+                type: "MEDIA_EXPORT_CHUNK",
+                current: i + 1,
+                total: ids.length,
+                item: {
+                  id,
+                  name: node.name,
+                  filename: filename.replace(/[/\\?%*:|"<>]/g, "-"),
+                  bytes: Array.from(bytes)
+                }
+              });
+            }
+          } catch (itemErr) {
+            console.warn(`Error processing media item ${id}:`, itemErr);
           }
           await new Promise((r) => setTimeout(r, 20));
         }

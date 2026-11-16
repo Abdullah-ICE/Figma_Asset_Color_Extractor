@@ -206,64 +206,93 @@ figma.ui.onmessage = async (msg: UIToPluginMessage) => {
       const ids = msg.ids;
       for (let i = 0; i < ids.length; i++) {
         const id = ids[i];
-        const node = figma.getNodeById(id) as (GeometryMixin & SceneNode) | null;
-        if (!node) continue;
+        try {
+          const node = figma.getNodeById(id) as (GeometryMixin & SceneNode) | null;
+          if (!node) continue;
 
-        let bytes: Uint8Array | null = null;
-        let filename = `${node.name || 'media'}.png`;
+          let bytes: Uint8Array | null = null;
+          let filename = `${node.name || 'media'}.png`;
 
-        if ('fills' in node && Array.isArray(node.fills)) {
-          for (const fill of node.fills) {
-            if (fill.type === 'VIDEO' && fill.videoHash) {
-              const video = figma.getVideoByHash(fill.videoHash);
-              if (video) {
-                bytes = await video.getBytesAsync();
-                filename = `${node.name || 'video'}.mp4`;
-                break;
-              }
-            } else if (fill.type === 'IMAGE' && fill.imageHash) {
-              const image = figma.getImageByHash(fill.imageHash);
-              if (image) {
-                bytes = await image.getBytesAsync();
-                filename = `${node.name || 'image'}.png`;
-                break;
+          // 1. Check fills for image or video
+          if ('fills' in node && Array.isArray(node.fills)) {
+            for (const fill of node.fills) {
+              if (fill.type === 'IMAGE' && fill.imageHash) {
+                try {
+                  const image = figma.getImageByHash(fill.imageHash);
+                  if (image) {
+                    bytes = await image.getBytesAsync();
+                    filename = `${node.name || 'image'}.png`;
+                    break;
+                  }
+                } catch {}
+              } else if (fill.type === 'VIDEO' && fill.videoHash) {
+                if (typeof (figma as any).getVideoByHash === 'function') {
+                  try {
+                    const video = (figma as any).getVideoByHash(fill.videoHash);
+                    if (video) {
+                      bytes = await video.getBytesAsync();
+                      filename = `${node.name || 'video'}.mp4`;
+                      break;
+                    }
+                  } catch {}
+                }
+
+                if (!bytes) {
+                  try {
+                    bytes = await (node as any).exportAsync({ format: 'MP4' });
+                    filename = `${node.name || 'video'}.mp4`;
+                    break;
+                  } catch {}
+                }
               }
             }
           }
-        }
 
-        if (!bytes) {
-          try {
-            const keys = node.getPluginDataKeys();
-            for (const key of keys) {
-              const val = node.getPluginData(key);
-              if (val && val.startsWith('{')) {
-                bytes = new TextEncoder().encode(val);
-                filename = `${node.name || 'animation'}.json`;
-                break;
+          // 2. Check for Lottie JSON in plugin data
+          if (!bytes) {
+            try {
+              const keys = node.getPluginDataKeys();
+              for (const key of keys) {
+                const val = node.getPluginData(key);
+                if (val && val.startsWith('{')) {
+                  bytes = new TextEncoder().encode(val);
+                  filename = `${node.name || 'animation'}.json`;
+                  break;
+                }
               }
+            } catch {}
+          }
+
+          // 3. Fallback: export node as high-res PNG
+          if (!bytes) {
+            try {
+              bytes = await node.exportAsync({
+                format: 'PNG',
+                constraint: { type: 'SCALE', value: 2 },
+              });
+              filename = `${node.name || 'asset'}.png`;
+            } catch (err: any) {
+              console.warn(`Could not export node ${node.name}:`, err);
             }
-          } catch {}
+          }
+
+          if (bytes) {
+            figma.ui.postMessage({
+              type: 'MEDIA_EXPORT_CHUNK',
+              current: i + 1,
+              total: ids.length,
+              item: {
+                id,
+                name: node.name,
+                filename: filename.replace(/[/\\?%*:|"<>]/g, '-'),
+                bytes: Array.from(bytes),
+              },
+            });
+          }
+        } catch (itemErr) {
+          console.warn(`Error processing media item ${id}:`, itemErr);
         }
 
-        if (!bytes) {
-          bytes = await node.exportAsync({ format: 'PNG', constraint: { type: 'SCALE', value: 2 } });
-          filename = `${node.name || 'asset'}.png`;
-        }
-
-        if (bytes) {
-          figma.ui.postMessage({
-            type: 'MEDIA_EXPORT_CHUNK',
-            current: i + 1,
-            total: ids.length,
-            item: {
-              id,
-              name: node.name,
-              filename: filename.replace(/[/\\?%*:|"<>]/g, '-'),
-              bytes: Array.from(bytes),
-            },
-          });
-        }
         await new Promise((r) => setTimeout(r, 20));
       }
 
