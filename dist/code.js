@@ -456,7 +456,11 @@
     for (const root of rootNodes) {
       walk(root);
     }
-    const result = Array.from(colorMap.values()).map((item) => ({
+    const result = Array.from(colorMap.values()).filter((item) => {
+      const isToken = item.source === "style" || item.source === "variable" || item.roles.has("token");
+      if (isToken) return true;
+      return item.usageCount >= 2;
+    }).map((item) => ({
       hex: item.hex,
       rgb: item.rgb,
       name: item.name,

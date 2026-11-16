@@ -240,16 +240,23 @@ export function extractProjectColors(rootNodes: readonly SceneNode[]): Extracted
     walk(root);
   }
 
-  // Convert ColorAccumulator to ExtractedColor array
-  const result: ExtractedColor[] = Array.from(colorMap.values()).map(item => ({
-    hex: item.hex,
-    rgb: item.rgb,
-    name: item.name,
-    usageCount: item.usageCount,
-    source: item.source,
-    roles: Array.from(item.roles),
-    screenNames: Array.from(item.screenNames),
-  }));
+  // Convert ColorAccumulator to ExtractedColor array (filter out stray 1-off noise)
+  const result: ExtractedColor[] = Array.from(colorMap.values())
+    .filter(item => {
+      const isToken = item.source === 'style' || item.source === 'variable' || item.roles.has('token');
+      if (isToken) return true;
+      // Filter out accidental 1-off noise colors
+      return item.usageCount >= 2;
+    })
+    .map(item => ({
+      hex: item.hex,
+      rgb: item.rgb,
+      name: item.name,
+      usageCount: item.usageCount,
+      source: item.source,
+      roles: Array.from(item.roles),
+      screenNames: Array.from(item.screenNames),
+    }));
 
   // Sort: Design Tokens first, then by usage count descending
   return result.sort((a, b) => {

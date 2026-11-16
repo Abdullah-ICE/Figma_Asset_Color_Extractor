@@ -38,12 +38,7 @@ export const ColorExportTab: React.FC<Props> = ({ colors }) => {
       // Single Screen: Show ONLY the colors used on this exact screen
       return colors.filter(c => c.screenNames && c.screenNames.includes(selectedScreen));
     }
-    // All Screens: Show core recurring theme colors (used >= 2 times or design tokens)
-    return colors.filter(c => {
-      const isToken = c.source === 'style' || c.source === 'variable' || (c.roles && c.roles.includes('token'));
-      if (isToken) return true;
-      return c.usageCount >= 2;
-    });
+    return colors;
   }, [colors, selectedScreen]);
 
   // Group into clean, simple sections: Surfaces, Text, Borders
