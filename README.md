@@ -45,6 +45,12 @@
   - Reads both Figma Local Text Styles and all canvas text layers with exact usage frequency counts.
   - Visual interactive font scale ladder with editable live sample preview text.
   - Exports design tokens directly as **CSS (`--font-size-*`, `--font-*`)**, **Tailwind (`theme.extend.fontFamily`, `fontSize`)**, **SCSS**, and **W3C Design Tokens JSON**.
+- 🧩 **Similar Component Detection & UI Inventory Auditor (Tab 4)**:
+  - Scans entire project to group repeating UI components (**Buttons, Cards, Input Fields, Badges, Chips, Avatars, Row Items**).
+  - Filters strictly for components with **occurrences $\ge 2$** to eliminate noise.
+  - Deep property inspection: **Size ($W \times H$)**, **Corner Radius**, **Background Fills**, **Borders/Strokes**, **AutoLayout Padding & Gap**, and **Typography**.
+  - **Design System Linter**: Automatically flags subtle design inconsistencies (e.g. radius mismatches or color discrepancies across sibling instances).
+  - Visual live SVG preview of each component cluster with one-click **`[🔍 Locate]`** canvas navigation for every instance.
 
 ---
 
@@ -132,7 +138,20 @@ Inside any design file:
 
 ---
 
-### Q1: The plugin window doesn't open when clicking in Figma?
+### Tab 4: Similar Component & UI Inventory Workflow
+
+1. Switch to the **Components** tab at the top of the plugin window.
+2. View repeating UI component clusters:
+   - Filter by category chips: **Buttons**, **Cards**, **Input Fields**, **Badges / Chips**, **Avatars**, or **Row Items**.
+   - Inspect shared properties: **Dimensions**, **Corner Radius**, **Background Fills**, **Strokes**, **AutoLayout**, and **Typography**.
+3. **Design System Inconsistency Alerts**:
+   - Easily identify design flaws (e.g. 10 buttons using 8px radius vs 2 using 6px radius).
+   - Check the **"Only Inconsistent ⚠️"** box to focus strictly on components needing design fixes.
+4. **Locate Instances on Canvas**:
+   - Expand any cluster to view all occurrences across your frames and screens.
+   - Click **`[🔍 Locate]`** next to any instance to instantly jump and zoom into it on the Figma canvas!
+
+---
 - **Ensure you are in Design Mode**: If you are in Figma **Dev Mode** (green badge/header), press **`Shift + D`** to toggle back to standard Design Mode. Modal UI plugins cannot run in Dev Mode.
 - **Ensure you have Edit Access**: If the file has a yellow `View only` banner, duplicate the file to your Drafts: **File** ➔ **Duplicate to your drafts**. Development plugins require edit permissions to inspect canvas nodes.
 

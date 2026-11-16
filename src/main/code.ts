@@ -1,15 +1,16 @@
 import { scanForIcons } from './iconDetector';
 import { extractProjectColors } from './colorExtractor';
 import { extractProjectTypography } from './typographyExtractor';
+import { auditProjectComponents } from './componentAuditor';
 import { processBatchExport } from './exportEngine';
-import { DetectedIcon, PluginToUIMessage, UIToPluginMessage } from './types';
+import { ComponentCluster, DetectedIcon, PluginToUIMessage, UIToPluginMessage } from './types';
 
 // Show the plugin dialog with comfortable size
 figma.showUI(__html__, {
-  width: 720,
-  height: 740,
+  width: 740,
+  height: 760,
   themeColors: true,
-  title: 'Asset, Color & Typography Extractor',
+  title: 'Asset, Color & Component Extractor',
 });
 
 // Broadcast selection changes to UI
@@ -79,6 +80,47 @@ async function streamIconPreviews(icons: DetectedIcon[], sessionId: number) {
   }
 }
 
+async function streamComponentPreviews(components: ComponentCluster[], sessionId: number) {
+  const CHUNK_SIZE = 6;
+  for (let i = 0; i < components.length; i += CHUNK_SIZE) {
+    if (sessionId !== currentScanSessionId) return;
+
+    const chunk = components.slice(i, i + CHUNK_SIZE);
+    const previews: { id: string; svg: string }[] = [];
+
+    await Promise.all(
+      chunk.map(async (cluster) => {
+        try {
+          const node = figma.getNodeById(cluster.representativeNodeId) as SceneNode | null;
+          if (node) {
+            const bytes = await node.exportAsync({
+              format: 'SVG',
+              svgIdAttribute: false,
+              svgOutlineText: true,
+              svgSimplifyStroke: true,
+            });
+            previews.push({
+              id: cluster.clusterId,
+              svg: bytesToSvgString(bytes),
+            });
+          }
+        } catch {}
+      })
+    );
+
+    if (sessionId !== currentScanSessionId) return;
+
+    if (previews.length > 0) {
+      figma.ui.postMessage({
+        type: 'COMPONENT_PREVIEWS_CHUNK',
+        previews,
+      });
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
 // Listen to UI requests
 figma.ui.onmessage = async (msg: UIToPluginMessage) => {
   try {
@@ -132,20 +174,23 @@ figma.ui.onmessage = async (msg: UIToPluginMessage) => {
         }
       }
 
-      // Extract colors & typography from scanned nodes
+      // Extract colors, typography & similar components from scanned nodes
       const colors = extractProjectColors(targetNodes);
       const typography = extractProjectTypography(targetNodes);
+      const components = auditProjectComponents(targetNodes);
 
       const response: PluginToUIMessage = {
         type: 'SCAN_COMPLETE',
         icons: allIcons,
         colors,
         typography,
+        components,
       };
       figma.ui.postMessage(response);
 
       // Start streaming visual SVG thumbnails in background
       streamIconPreviews(allIcons, thisSessionId);
+      streamComponentPreviews(components, thisSessionId);
     }
 
     if (msg.type === 'START_EXPORT') {

@@ -32,6 +32,52 @@ export interface ExtractedTypography {
   source: 'style' | 'raw_node';
 }
 
+export type ComponentCategory = 'button' | 'card' | 'input' | 'badge' | 'avatar' | 'row_item' | 'other';
+
+export interface ComponentProperties {
+  width: number;
+  height: number;
+  cornerRadius: number | string;
+  fills: string[];
+  strokes: { color: string; weight: number }[];
+  padding: { top: number; right: number; bottom: number; left: number };
+  gap: number;
+  layoutMode: 'NONE' | 'HORIZONTAL' | 'VERTICAL';
+  typography?: {
+    family: string;
+    size: number;
+    weight: number;
+    text: string;
+  };
+}
+
+export interface ComponentInstanceItem {
+  nodeId: string;
+  name: string;
+  pageName: string;
+  screenName: string;
+  properties: ComponentProperties;
+}
+
+export interface ComponentCluster {
+  clusterId: string;
+  category: ComponentCategory;
+  representativeName: string;
+  totalOccurrences: number;
+  representativeNodeId: string;
+  sharedDimensions: { width: number; height: number };
+  sharedRadius: number | string;
+  sharedFills: string[];
+  instances: ComponentInstanceItem[];
+  svgPreview?: string;
+  inconsistencies: {
+    hasRadiusMismatch: boolean;
+    hasColorMismatch: boolean;
+    hasDimensionMismatch: boolean;
+    details: string[];
+  };
+}
+
 export interface ScanConfig {
   scope: 'selection' | 'page' | 'document';
   maxDimension: number;
@@ -52,9 +98,14 @@ export type PluginToUIMessage =
       icons: DetectedIcon[];
       colors: ExtractedColor[];
       typography: ExtractedTypography[];
+      components: ComponentCluster[];
     }
   | {
       type: 'ICON_PREVIEWS_CHUNK';
+      previews: { id: string; svg: string }[];
+    }
+  | {
+      type: 'COMPONENT_PREVIEWS_CHUNK';
       previews: { id: string; svg: string }[];
     }
   | {

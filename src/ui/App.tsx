@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  ComponentCluster,
   DetectedIcon,
   ExportRequest,
   ExtractedColor,
@@ -9,16 +10,18 @@ import {
   UIToPluginMessage,
 } from '../main/types';
 import { ColorExportTab } from './components/ColorExportTab';
+import { ComponentInventoryTab } from './components/ComponentInventoryTab';
 import { ExportProgressBar } from './components/ExportProgressBar';
 import { IconExportTab } from './components/IconExportTab';
 import { TypographyExportTab } from './components/TypographyExportTab';
 import { ZipArchiver } from './utils/zipArchiver';
 
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'icons' | 'colors' | 'typography'>('icons');
+  const [activeTab, setActiveTab] = useState<'icons' | 'colors' | 'typography' | 'components'>('icons');
   const [icons, setIcons] = useState<DetectedIcon[]>([]);
   const [colors, setColors] = useState<ExtractedColor[]>([]);
   const [typography, setTypography] = useState<ExtractedTypography[]>([]);
+  const [components, setComponents] = useState<ComponentCluster[]>([]);
   const [selectionCount, setSelectionCount] = useState<number>(0);
 
   const [isScanning, setIsScanning] = useState<boolean>(false);
@@ -53,6 +56,9 @@ export const App: React.FC = () => {
         if ('typography' in msg && Array.isArray(msg.typography)) {
           setTypography(msg.typography);
         }
+        if ('components' in msg && Array.isArray(msg.components)) {
+          setComponents(msg.components);
+        }
         setIsScanning(false);
         setErrorMessage(null);
       }
@@ -66,6 +72,19 @@ export const App: React.FC = () => {
           prev.map(icon => {
             const svg = previewMap.get(icon.id);
             return svg ? { ...icon, svgPreview: svg } : icon;
+          })
+        );
+      }
+
+      if (msg.type === 'COMPONENT_PREVIEWS_CHUNK') {
+        const previewMap = new Map<string, string>();
+        for (const p of msg.previews) {
+          previewMap.set(p.id, p.svg);
+        }
+        setComponents(prev =>
+          prev.map(cluster => {
+            const svg = previewMap.get(cluster.clusterId);
+            return svg ? { ...cluster, svgPreview: svg } : cluster;
           })
         );
       }
@@ -153,13 +172,13 @@ export const App: React.FC = () => {
       <header className="px-3.5 py-2 border-b border-[var(--figma-color-border,#e5e7eb)] flex items-center justify-between flex-shrink-0 bg-white">
         <div>
           <h1 className="font-bold text-sm tracking-tight text-[var(--figma-color-text,#111827)]">
-            Asset &amp; Color Extractor
+            Asset, Color &amp; Component Extractor
           </h1>
-          <p className="text-[10px] text-gray-400">Icons, Colors &amp; Typography Tokens</p>
+          <p className="text-[10px] text-gray-400">Icons, Colors, Typography &amp; UI Inventory</p>
         </div>
 
-        {/* Tab Switcher: Icons, Colors, Typography */}
-        <div className="flex bg-[var(--figma-color-bg-secondary,#f3f4f6)] p-0.5 rounded-lg border border-[var(--figma-color-border,#e5e7eb)]">
+        {/* Tab Switcher: Icons, Colors, Typography, Components */}
+        <div className="flex bg-[var(--figma-color-bg-secondary,#f3f4f6)] p-0.5 rounded-lg border border-[var(--figma-color-border,#e5e7eb)] space-x-0.5">
           <button
             onClick={() => setActiveTab('icons')}
             className={`px-2.5 py-1 rounded-md font-medium text-xs transition-colors ${
@@ -189,6 +208,16 @@ export const App: React.FC = () => {
             }`}
           >
             Typography {typography.length > 0 && `(${typography.length})`}
+          </button>
+          <button
+            onClick={() => setActiveTab('components')}
+            className={`px-2.5 py-1 rounded-md font-medium text-xs transition-colors ${
+              activeTab === 'components'
+                ? 'bg-[var(--figma-color-bg,#ffffff)] shadow-sm text-blue-600 font-bold'
+                : 'text-gray-500 hover:text-gray-900'
+            }`}
+          >
+            Components {components.length > 0 && `(${components.length})`}
           </button>
         </div>
       </header>
@@ -230,15 +259,21 @@ export const App: React.FC = () => {
             />
           ) : activeTab === 'colors' ? (
             <ColorExportTab colors={colors} isScanning={isScanning} />
-          ) : (
+          ) : activeTab === 'typography' ? (
             <TypographyExportTab typography={typography} isScanning={isScanning} />
+          ) : (
+            <ComponentInventoryTab
+              components={components}
+              isScanning={isScanning}
+              onSelectNode={handleSelectNode}
+            />
           )}
         </div>
       </main>
 
       {/* Footer */}
       <footer className="px-3 py-1.5 border-t border-[var(--figma-color-border,#e5e7eb)] flex justify-between items-center text-[10px] text-gray-400 bg-[var(--figma-color-bg-secondary,#fafafa)] flex-shrink-0">
-        <span>Figma Asset, Color &amp; Typography Extractor • Drag corner ↘ to resize</span>
+        <span>Figma Asset, Color &amp; Component Extractor • Drag corner ↘ to resize</span>
         <button
           onClick={() => postToPlugin({ type: 'CLOSE_PLUGIN' })}
           className="hover:text-gray-700 underline pr-4"
