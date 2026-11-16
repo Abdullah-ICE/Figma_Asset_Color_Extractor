@@ -283,6 +283,36 @@
     }
     return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
   }
+  function getTopLevelScreenName3(node) {
+    let curr = node;
+    let topScreen = node.name;
+    while (curr && curr.parent && curr.parent.type !== "PAGE" && curr.parent.type !== "DOCUMENT") {
+      curr = curr.parent;
+      if ("name" in curr) {
+        topScreen = curr.name;
+      }
+    }
+    return topScreen ? topScreen.trim() : "Screen";
+  }
+  function isIconCandidateContainer(node) {
+    if (["VECTOR", "STAR", "POLYGON", "BOOLEAN_OPERATION"].includes(node.type)) {
+      return true;
+    }
+    const w = node.width;
+    const h = node.height;
+    const isSmall = w <= 48 && h <= 48 && w >= 8 && h >= 8;
+    const nameSuggestsIcon = /icon|ic[-_]|glyph|symbol/i.test(node.name);
+    if ((isSmall || nameSuggestsIcon) && "children" in node) {
+      const children = node.children;
+      if (children.length > 0) {
+        const hasText = children.some((c) => c.type === "TEXT");
+        if (!hasText) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
   function extractProjectColors(rootNodes) {
     const colorMap = /* @__PURE__ */ new Map();
     try {
@@ -292,18 +322,27 @@
           if (paint.type === "SOLID" && paint.visible !== false) {
             const alpha = paint.opacity ?? 1;
             const hex = figmaColorToHex(paint.color, alpha);
-            colorMap.set(hex, {
-              hex,
-              rgb: {
-                r: Math.round(paint.color.r * 255),
-                g: Math.round(paint.color.g * 255),
-                b: Math.round(paint.color.b * 255),
-                a: Number(alpha.toFixed(2))
-              },
-              name: style.name,
-              usageCount: 0,
-              source: "style"
-            });
+            const existing = colorMap.get(hex);
+            if (existing) {
+              existing.roles.add("token");
+              if (!existing.name) existing.name = style.name;
+              if (existing.source !== "variable") existing.source = "style";
+            } else {
+              colorMap.set(hex, {
+                hex,
+                rgb: {
+                  r: Math.round(paint.color.r * 255),
+                  g: Math.round(paint.color.g * 255),
+                  b: Math.round(paint.color.b * 255),
+                  a: Number(alpha.toFixed(2))
+                },
+                name: style.name,
+                usageCount: 0,
+                source: "style",
+                roles: /* @__PURE__ */ new Set(["token"]),
+                screenNames: /* @__PURE__ */ new Set()
+              });
+            }
           }
         }
       }
@@ -320,7 +359,12 @@
             const colorVal = val;
             const alpha = colorVal.a ?? 1;
             const hex = figmaColorToHex(colorVal, alpha);
-            if (!colorMap.has(hex)) {
+            const existing = colorMap.get(hex);
+            if (existing) {
+              existing.roles.add("token");
+              if (!existing.name) existing.name = variable.name;
+              existing.source = "variable";
+            } else {
               colorMap.set(hex, {
                 hex,
                 rgb: {
@@ -331,7 +375,9 @@
                 },
                 name: variable.name,
                 usageCount: 0,
-                source: "variable"
+                source: "variable",
+                roles: /* @__PURE__ */ new Set(["token"]),
+                screenNames: /* @__PURE__ */ new Set()
               });
             }
           }
@@ -340,7 +386,7 @@
     } catch (err) {
       console.warn("Could not read local variables:", err);
     }
-    function inspectPaints(paints) {
+    function recordColor(paints, role, screenName) {
       if (!Array.isArray(paints)) return;
       for (const paint of paints) {
         if (paint.type === "SOLID" && paint.visible !== false) {
@@ -349,6 +395,8 @@
           const existing = colorMap.get(hex);
           if (existing) {
             existing.usageCount++;
+            existing.roles.add(role);
+            if (screenName) existing.screenNames.add(screenName);
           } else {
             colorMap.set(hex, {
               hex,
@@ -359,7 +407,9 @@
                 a: Number(alpha.toFixed(2))
               },
               usageCount: 1,
-              source: "raw_node"
+              source: "raw_node",
+              roles: /* @__PURE__ */ new Set([role]),
+              screenNames: new Set(screenName ? [screenName] : [])
             });
           }
         }
@@ -367,11 +417,30 @@
     }
     function walk(node) {
       if (!node.visible) return;
-      if ("fills" in node) {
-        inspectPaints(node.fills);
+      const screenName = getTopLevelScreenName3(node);
+      if (node.type === "TEXT") {
+        if ("fills" in node) {
+          recordColor(node.fills, "text", screenName);
+        }
+        return;
       }
-      if ("strokes" in node) {
-        inspectPaints(node.strokes);
+      if (["VECTOR", "STAR", "POLYGON", "BOOLEAN_OPERATION"].includes(node.type)) {
+        return;
+      }
+      if (isIconCandidateContainer(node)) {
+        if ("fills" in node && Array.isArray(node.fills) && node.fills.length > 0) {
+          recordColor(node.fills, "surface", screenName);
+        }
+        if ("strokes" in node && Array.isArray(node.strokes) && node.strokes.length > 0) {
+          recordColor(node.strokes, "border", screenName);
+        }
+        return;
+      }
+      if ("fills" in node && Array.isArray(node.fills)) {
+        recordColor(node.fills, "surface", screenName);
+      }
+      if ("strokes" in node && Array.isArray(node.strokes)) {
+        recordColor(node.strokes, "border", screenName);
       }
       if ("children" in node) {
         for (const child of node.children) {
@@ -382,9 +451,20 @@
     for (const root of rootNodes) {
       walk(root);
     }
-    return Array.from(colorMap.values()).sort((a, b) => {
-      if (a.source === "style" && b.source !== "style") return -1;
-      if (b.source === "style" && a.source !== "style") return 1;
+    const result = Array.from(colorMap.values()).map((item) => ({
+      hex: item.hex,
+      rgb: item.rgb,
+      name: item.name,
+      usageCount: item.usageCount,
+      source: item.source,
+      roles: Array.from(item.roles),
+      screenNames: Array.from(item.screenNames)
+    }));
+    return result.sort((a, b) => {
+      const aIsToken = a.source === "style" || a.source === "variable";
+      const bIsToken = b.source === "style" || b.source === "variable";
+      if (aIsToken && !bIsToken) return -1;
+      if (bIsToken && !aIsToken) return 1;
       return b.usageCount - a.usageCount;
     });
   }
@@ -522,7 +602,7 @@
     if (s.includes("bold")) return 700;
     return 400;
   }
-  function getTopLevelScreenName3(node) {
+  function getTopLevelScreenName4(node) {
     let curr = node;
     let topScreen = node.name;
     while (curr && curr.parent && curr.parent.type !== "PAGE" && curr.parent.type !== "DOCUMENT") {
@@ -671,7 +751,7 @@
               nodeId: frame.id,
               name: frame.name,
               pageName,
-              screenName: getTopLevelScreenName3(frame),
+              screenName: getTopLevelScreenName4(frame),
               properties: props
             },
             category,

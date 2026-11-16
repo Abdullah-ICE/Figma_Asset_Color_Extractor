@@ -1,4 +1,4 @@
-import { ExtractedColor } from './types';
+import { ExtractedColor, ColorRole } from './types';
 
 function figmaColorToHex(color: RGB, opacity = 1): string {
   const r = Math.min(255, Math.max(0, Math.round(color.r * 255)));
@@ -13,10 +13,61 @@ function figmaColorToHex(color: RGB, opacity = 1): string {
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 }
 
-export function extractProjectColors(rootNodes: readonly SceneNode[]): ExtractedColor[] {
-  const colorMap = new Map<string, ExtractedColor>();
+function getTopLevelScreenName(node: SceneNode): string {
+  let curr: BaseNode | null = node;
+  let topScreen = node.name;
+  while (curr && curr.parent && curr.parent.type !== 'PAGE' && curr.parent.type !== 'DOCUMENT') {
+    curr = curr.parent;
+    if ('name' in curr) {
+      topScreen = (curr as SceneNode).name;
+    }
+  }
+  return topScreen ? topScreen.trim() : 'Screen';
+}
 
-  // 1. Extract Local Paint Styles
+/**
+ * Checks if a node represents an icon or icon-like container whose internal vector children
+ * should NOT have their fills/strokes extracted into the developer color palette.
+ */
+function isIconCandidateContainer(node: SceneNode): boolean {
+  // Pure vector elements
+  if (['VECTOR', 'STAR', 'POLYGON', 'BOOLEAN_OPERATION'].includes(node.type)) {
+    return true;
+  }
+
+  const w = node.width;
+  const h = node.height;
+  const isSmall = w <= 48 && h <= 48 && w >= 8 && h >= 8;
+  const nameSuggestsIcon = /icon|ic[-_]|glyph|symbol/i.test(node.name);
+
+  if ((isSmall || nameSuggestsIcon) && 'children' in node) {
+    const children = (node as ChildrenMixin).children;
+    if (children.length > 0) {
+      // If it contains only vector shapes and NO text, it is an icon container
+      const hasText = children.some(c => c.type === 'TEXT');
+      if (!hasText) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+interface ColorAccumulator {
+  hex: string;
+  rgb: { r: number; g: number; b: number; a: number };
+  name?: string;
+  usageCount: number;
+  source: 'style' | 'variable' | 'raw_node';
+  roles: Set<ColorRole>;
+  screenNames: Set<string>;
+}
+
+export function extractProjectColors(rootNodes: readonly SceneNode[]): ExtractedColor[] {
+  const colorMap = new Map<string, ColorAccumulator>();
+
+  // 1. Extract Local Paint Styles (Official Design Tokens)
   try {
     const localStyles = figma.getLocalPaintStyles();
     for (const style of localStyles) {
@@ -24,18 +75,27 @@ export function extractProjectColors(rootNodes: readonly SceneNode[]): Extracted
         if (paint.type === 'SOLID' && paint.visible !== false) {
           const alpha = paint.opacity ?? 1;
           const hex = figmaColorToHex(paint.color, alpha);
-          colorMap.set(hex, {
-            hex,
-            rgb: {
-              r: Math.round(paint.color.r * 255),
-              g: Math.round(paint.color.g * 255),
-              b: Math.round(paint.color.b * 255),
-              a: Number(alpha.toFixed(2)),
-            },
-            name: style.name,
-            usageCount: 0,
-            source: 'style',
-          });
+          const existing = colorMap.get(hex);
+          if (existing) {
+            existing.roles.add('token');
+            if (!existing.name) existing.name = style.name;
+            if (existing.source !== 'variable') existing.source = 'style';
+          } else {
+            colorMap.set(hex, {
+              hex,
+              rgb: {
+                r: Math.round(paint.color.r * 255),
+                g: Math.round(paint.color.g * 255),
+                b: Math.round(paint.color.b * 255),
+                a: Number(alpha.toFixed(2)),
+              },
+              name: style.name,
+              usageCount: 0,
+              source: 'style',
+              roles: new Set(['token']),
+              screenNames: new Set(),
+            });
+          }
         }
       }
     }
@@ -54,7 +114,12 @@ export function extractProjectColors(rootNodes: readonly SceneNode[]): Extracted
           const colorVal = val as RGBA;
           const alpha = colorVal.a ?? 1;
           const hex = figmaColorToHex(colorVal, alpha);
-          if (!colorMap.has(hex)) {
+          const existing = colorMap.get(hex);
+          if (existing) {
+            existing.roles.add('token');
+            if (!existing.name) existing.name = variable.name;
+            existing.source = 'variable';
+          } else {
             colorMap.set(hex, {
               hex,
               rgb: {
@@ -66,6 +131,8 @@ export function extractProjectColors(rootNodes: readonly SceneNode[]): Extracted
               name: variable.name,
               usageCount: 0,
               source: 'variable',
+              roles: new Set(['token']),
+              screenNames: new Set(),
             });
           }
         }
@@ -75,16 +142,23 @@ export function extractProjectColors(rootNodes: readonly SceneNode[]): Extracted
     console.warn('Could not read local variables:', err);
   }
 
-  // 3. Recursive Scene Graph Walk for Raw Node Colors & Frequency
-  function inspectPaints(paints: readonly Paint[] | PluginAPI['mixed']) {
+  // Helper to record a color with its semantic role
+  function recordColor(
+    paints: readonly Paint[] | PluginAPI['mixed'],
+    role: ColorRole,
+    screenName: string
+  ) {
     if (!Array.isArray(paints)) return;
     for (const paint of paints) {
       if (paint.type === 'SOLID' && paint.visible !== false) {
         const alpha = paint.opacity ?? 1;
         const hex = figmaColorToHex(paint.color, alpha);
         const existing = colorMap.get(hex);
+
         if (existing) {
           existing.usageCount++;
+          existing.roles.add(role);
+          if (screenName) existing.screenNames.add(screenName);
         } else {
           colorMap.set(hex, {
             hex,
@@ -96,22 +170,59 @@ export function extractProjectColors(rootNodes: readonly SceneNode[]): Extracted
             },
             usageCount: 1,
             source: 'raw_node',
+            roles: new Set([role]),
+            screenNames: new Set(screenName ? [screenName] : []),
           });
         }
       }
     }
   }
 
+  // 3. Strict Developer Scene Graph Walk
   function walk(node: SceneNode) {
     if (!node.visible) return;
 
-    if ('fills' in node) {
-      inspectPaints(node.fills);
-    }
-    if ('strokes' in node) {
-      inspectPaints(node.strokes);
+    const screenName = getTopLevelScreenName(node);
+
+    // Case A: Text Nodes -> Role is strictly 'text'
+    if (node.type === 'TEXT') {
+      if ('fills' in node) {
+        recordColor(node.fills, 'text', screenName);
+      }
+      return;
     }
 
+    // Case B: Pure Vector Shapes (Standalone vector paths, illustrations)
+    // Developers don't extract individual path colors from SVG illustrations/icons
+    if (['VECTOR', 'STAR', 'POLYGON', 'BOOLEAN_OPERATION'].includes(node.type)) {
+      return; // Skip vector paths completely
+    }
+
+    // Case C: Icon Container (e.g., Icon button or Icon component)
+    // If it has a background fill (e.g. an icon button circle/rect), extract that as 'surface',
+    // but DO NOT traverse into its internal vector children!
+    if (isIconCandidateContainer(node)) {
+      if ('fills' in node && Array.isArray(node.fills) && node.fills.length > 0) {
+        recordColor(node.fills, 'surface', screenName);
+      }
+      if ('strokes' in node && Array.isArray(node.strokes) && node.strokes.length > 0) {
+        recordColor(node.strokes, 'border', screenName);
+      }
+      return; // Stop here! Do not inspect internal icon vectors.
+    }
+
+    // Case D: UI Containers (Frames, Components, Instances, Rectangles, Ellipses, Lines)
+    if ('fills' in node && Array.isArray(node.fills)) {
+      // Large surfaces or containers = 'surface'
+      recordColor(node.fills, 'surface', screenName);
+    }
+
+    if ('strokes' in node && Array.isArray(node.strokes)) {
+      // Borders, dividers, outlines = 'border'
+      recordColor(node.strokes, 'border', screenName);
+    }
+
+    // Recurse down children for UI components and nested containers
     if ('children' in node) {
       for (const child of (node as ChildrenMixin).children) {
         walk(child);
@@ -123,11 +234,23 @@ export function extractProjectColors(rootNodes: readonly SceneNode[]): Extracted
     walk(root);
   }
 
-  // Return sorted by usageCount descending (most frequently used colors first)
-  return Array.from(colorMap.values()).sort((a, b) => {
-    if (a.source === 'style' && b.source !== 'style') return -1;
-    if (b.source === 'style' && a.source !== 'style') return 1;
+  // Convert ColorAccumulator to ExtractedColor array
+  const result: ExtractedColor[] = Array.from(colorMap.values()).map(item => ({
+    hex: item.hex,
+    rgb: item.rgb,
+    name: item.name,
+    usageCount: item.usageCount,
+    source: item.source,
+    roles: Array.from(item.roles),
+    screenNames: Array.from(item.screenNames),
+  }));
+
+  // Sort: Design Tokens first, then by usage count descending
+  return result.sort((a, b) => {
+    const aIsToken = a.source === 'style' || a.source === 'variable';
+    const bIsToken = b.source === 'style' || b.source === 'variable';
+    if (aIsToken && !bIsToken) return -1;
+    if (bIsToken && !aIsToken) return 1;
     return b.usageCount - a.usageCount;
   });
 }
-

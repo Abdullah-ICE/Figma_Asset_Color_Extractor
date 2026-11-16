@@ -41,12 +41,16 @@ export interface DetectedMedia {
   lottieJsonString?: string;
 }
 
+export type ColorRole = 'surface' | 'text' | 'border' | 'token';
+
 export interface ExtractedColor {
   hex: string;
   rgb: { r: number; g: number; b: number; a: number };
   name?: string;
   usageCount: number;
   source: 'style' | 'variable' | 'raw_node';
+  roles: ColorRole[];
+  screenNames: string[];
 }
 
 export interface ExtractedTypography {

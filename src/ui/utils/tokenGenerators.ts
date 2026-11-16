@@ -10,11 +10,22 @@ function sanitizeTokenName(name: string, fallback: string): string {
   return clean || fallback;
 }
 
+function getFallbackName(c: ExtractedColor, i: number): string {
+  if (c.roles && c.roles.length > 0) {
+    if (c.roles.includes('text')) return `text-${i + 1}`;
+    if (c.roles.includes('surface')) return `surface-${i + 1}`;
+    if (c.roles.includes('border')) return `border-${i + 1}`;
+  }
+  return `color-${i + 1}`;
+}
+
 export function generateCssVariables(colors: ExtractedColor[]): string {
   const lines = [':root {'];
   colors.forEach((c, i) => {
-    const varName = sanitizeTokenName(c.name || `color-${i + 1}`, `color-${i + 1}`);
-    const comment = c.usageCount > 0 ? ` /* Used ${c.usageCount} times */` : '';
+    const fallback = getFallbackName(c, i);
+    const varName = sanitizeTokenName(c.name || fallback, fallback);
+    const roleTag = c.roles && c.roles.length > 0 ? ` [${c.roles.join(', ')}]` : '';
+    const comment = c.usageCount > 0 ? ` /* Used ${c.usageCount} times${roleTag} */` : '';
     lines.push(`  --${varName}: ${c.hex};${comment}`);
   });
   lines.push('}');
@@ -24,8 +35,10 @@ export function generateCssVariables(colors: ExtractedColor[]): string {
 export function generateScssVariables(colors: ExtractedColor[]): string {
   return colors
     .map((c, i) => {
-      const varName = sanitizeTokenName(c.name || `color-${i + 1}`, `color-${i + 1}`);
-      const comment = c.usageCount > 0 ? ` // Used ${c.usageCount} times` : '';
+      const fallback = getFallbackName(c, i);
+      const varName = sanitizeTokenName(c.name || fallback, fallback);
+      const roleTag = c.roles && c.roles.length > 0 ? ` [${c.roles.join(', ')}]` : '';
+      const comment = c.usageCount > 0 ? ` // Used ${c.usageCount} times${roleTag}` : '';
       return `$${varName}: ${c.hex};${comment}`;
     })
     .join('\n');
@@ -34,7 +47,8 @@ export function generateScssVariables(colors: ExtractedColor[]): string {
 export function generateTailwindConfig(colors: ExtractedColor[]): string {
   const colorObj: Record<string, string> = {};
   colors.forEach((c, i) => {
-    const key = sanitizeTokenName(c.name || `color-${i + 1}`, `color-${i + 1}`);
+    const fallback = getFallbackName(c, i);
+    const key = sanitizeTokenName(c.name || fallback, fallback);
     colorObj[key] = c.hex;
   });
 
@@ -49,15 +63,17 @@ export function generateDesignTokensJson(colors: ExtractedColor[]): string {
   const tokens: Record<string, any> = {};
 
   colors.forEach((c, i) => {
-    const key = sanitizeTokenName(c.name || `color-${i + 1}`, `color-${i + 1}`);
+    const fallback = getFallbackName(c, i);
+    const key = sanitizeTokenName(c.name || fallback, fallback);
     tokens[key] = {
       $value: c.hex,
       $type: 'color',
-      $description: c.name ? `Figma style: ${c.name}` : `Extracted color (usage count: ${c.usageCount})`,
+      $description: c.name ? `Figma token: ${c.name}` : `Extracted color (${(c.roles || []).join(', ')})`,
       $extensions: {
         figma: {
           source: c.source,
           usageCount: c.usageCount,
+          roles: c.roles || [],
           rgb: c.rgb,
         },
       },
