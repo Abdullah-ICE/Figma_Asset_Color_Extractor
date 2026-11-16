@@ -49,10 +49,8 @@
   - Scans entire project to group **100% identical repeating UI components** (**Buttons, Cards, Input Fields, Badges, Chips, Avatars, Row Items**).
   - **Zero Tolerance (Same-to-Same)**: Every instance in a group strictly matches in **Exact Dimensions ($W \times H$)**, **Exact Corner Radius**, **Exact Background Colors**, **Exact Borders/Strokes**, and **Exact AutoLayout/Padding**.
   - Filters strictly for components with **occurrences $\ge 2$** (repeated clones across screens).
-  - **Instant Component Copy Actions**:
-    - **`📋 Copy to Canvas`**: 1-click duplicates and places the live Figma component directly at the center of your active screen viewport, selected and ready to use!
-    - **`Copy SVG`**: Copies clean vector SVG markup to the system clipboard (paste into code, design tools, or press `Cmd+V` inside Figma).
-    - **`Copy CSS`**: Copies standard CSS rules (`width`, `height`, `background`, `border-radius`, `border`, `padding`, `font`).
+  - **Instant `Copy as CSS` Action**:
+    - 1-click **`📋 Copy as CSS`** button copies the component's complete CSS rules directly to your clipboard (`box-sizing`, `width`, `height`, `border-radius`, `background`, `border`, `display: flex`, `padding`, `gap`, `font-family`, `font-size`, `font-weight`).
   - Visual live SVG preview of each component cluster with one-click **`[🔍 Locate]`** canvas navigation for every clone.
 
 ---

@@ -270,7 +270,6 @@ export const App: React.FC = () => {
               components={components}
               isScanning={isScanning}
               onSelectNode={handleSelectNode}
-              onCopyNode={handleCopyNode}
             />
           )}
         </div>

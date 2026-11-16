@@ -5,7 +5,6 @@ interface Props {
   components: ComponentCluster[];
   isScanning: boolean;
   onSelectNode: (id: string) => void;
-  onCopyNode: (id: string) => void;
 }
 
 const CATEGORY_LABELS: Record<ComponentCategory, string> = {
@@ -56,17 +55,28 @@ async function copyToClipboard(text: string): Promise<boolean> {
 function generateComponentCss(cluster: ComponentCluster): string {
   const p = cluster.instances[0].properties;
   const lines: string[] = [
-    `/* ${cluster.representativeName} (${CATEGORY_LABELS[cluster.category] || 'Component'}) */`,
+    `/* ${cluster.representativeName} (${p.width}x${p.height}px) */`,
+    `box-sizing: border-box;`,
     `width: ${p.width}px;`,
     `height: ${p.height}px;`,
   ];
 
-  if (typeof p.cornerRadius === 'number' && p.cornerRadius > 0) {
-    lines.push(`border-radius: ${p.cornerRadius}px;`);
+  if (typeof p.cornerRadius === 'number') {
+    if (p.cornerRadius > 0) {
+      lines.push(`border-radius: ${p.cornerRadius}px;`);
+    }
+  } else if (p.cornerRadius) {
+    const radParts = p.cornerRadius
+      .split(',')
+      .map(r => `${r.trim()}px`)
+      .join(' ');
+    lines.push(`border-radius: ${radParts};`);
   }
 
   if (p.fills.length > 0) {
     lines.push(`background: ${p.fills[0]};`);
+  } else {
+    lines.push(`background: transparent;`);
   }
 
   if (p.strokes.length > 0) {
@@ -77,7 +87,21 @@ function generateComponentCss(cluster: ComponentCluster): string {
   if (p.layoutMode !== 'NONE') {
     lines.push(`display: flex;`);
     lines.push(`flex-direction: ${p.layoutMode === 'VERTICAL' ? 'column' : 'row'};`);
-    lines.push(`padding: ${p.padding.top}px ${p.padding.right}px ${p.padding.bottom}px ${p.padding.left}px;`);
+    const { top, right, bottom, left } = p.padding;
+    if (top || right || bottom || left) {
+      if (top === bottom && right === left && top === right) {
+        lines.push(`padding: ${top}px;`);
+      } else if (top === bottom && right === left) {
+        lines.push(`padding: ${top}px ${right}px;`);
+      } else {
+        lines.push(`padding: ${top}px ${right}px ${bottom}px ${left}px;`);
+      }
+    }
+    if (p.gap > 0) {
+      lines.push(`gap: ${p.gap}px;`);
+    }
+    lines.push(`align-items: center;`);
+    lines.push(`justify-content: center;`);
   }
 
   if (p.typography) {
@@ -93,17 +117,11 @@ export const ComponentInventoryTab: React.FC<Props> = ({
   components,
   isScanning,
   onSelectNode,
-  onCopyNode,
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [expandedClusterIds, setExpandedClusterIds] = useState<Set<string>>(new Set());
-
-  // Copy feedback state
-  const [copiedCanvasId, setCopiedCanvasId] = useState<string | null>(null);
-  const [copiedSvgId, setCopiedSvgId] = useState<string | null>(null);
   const [copiedCssId, setCopiedCssId] = useState<string | null>(null);
-  const [copiedInstanceId, setCopiedInstanceId] = useState<string | null>(null);
 
   // Category counts
   const categoryCounts = React.useMemo(() => {
@@ -136,21 +154,6 @@ export const ComponentInventoryTab: React.FC<Props> = ({
       else next.add(clusterId);
       return next;
     });
-  };
-
-  const handleCopyCanvas = (cluster: ComponentCluster) => {
-    onCopyNode(cluster.representativeNodeId);
-    setCopiedCanvasId(cluster.clusterId);
-    setTimeout(() => setCopiedCanvasId(null), 2000);
-  };
-
-  const handleCopySvg = async (cluster: ComponentCluster) => {
-    if (!cluster.svgPreview) return;
-    const ok = await copyToClipboard(cluster.svgPreview);
-    if (ok) {
-      setCopiedSvgId(cluster.clusterId);
-      setTimeout(() => setCopiedSvgId(null), 2000);
-    }
   };
 
   const handleCopyCss = async (cluster: ComponentCluster) => {
@@ -190,8 +193,8 @@ export const ComponentInventoryTab: React.FC<Props> = ({
             </div>
 
             <div className="flex items-center space-x-2">
-              <span className="text-[10px] text-gray-400">
-                Tip: Click <b>📋 Copy to Canvas</b> to duplicate directly in Figma or <b>Copy SVG</b> for clipboard!
+              <span className="text-[11px] text-gray-500">
+                Click <b className="text-blue-600 font-semibold">Copy as CSS</b> to copy exact component CSS styling to clipboard.
               </span>
             </div>
           </div>
@@ -264,6 +267,7 @@ export const ComponentInventoryTab: React.FC<Props> = ({
                   const isExpanded = expandedClusterIds.has(cluster.clusterId);
                   const firstItem = cluster.instances[0];
                   const props = firstItem.properties;
+                  const isCopied = copiedCssId === cluster.clusterId;
 
                   return (
                     <div
@@ -281,57 +285,31 @@ export const ComponentInventoryTab: React.FC<Props> = ({
                           </span>
                         </div>
 
-                        {/* Actions Toolbar */}
-                        <div className="flex items-center space-x-1.5 flex-wrap">
+                        {/* Actions: Copy as CSS + Locate */}
+                        <div className="flex items-center space-x-2">
                           <span className="text-[10px] bg-emerald-50 text-emerald-800 font-bold px-2 py-0.5 rounded-full border border-emerald-200">
                             {cluster.totalOccurrences} exact clones
                           </span>
 
-                          {/* 1. Copy to Canvas */}
+                          {/* Copy as CSS Button */}
                           <button
-                            onClick={() => handleCopyCanvas(cluster)}
-                            title="Duplicate and place component directly on current Figma canvas"
-                            className={`text-[10px] font-semibold px-2 py-0.5 rounded shadow-xs flex items-center space-x-1 transition-all ${
-                              copiedCanvasId === cluster.clusterId
+                            onClick={() => handleCopyCss(cluster)}
+                            title="Copy component styles as CSS to clipboard"
+                            className={`text-[11px] font-semibold px-2.5 py-1 rounded shadow-xs flex items-center space-x-1.5 transition-all ${
+                              isCopied
                                 ? 'bg-emerald-600 text-white'
                                 : 'bg-blue-600 hover:bg-blue-700 text-white'
                             }`}
                           >
-                            <span>📋</span>
-                            <span>{copiedCanvasId === cluster.clusterId ? '✓ Added to Canvas!' : 'Copy to Canvas'}</span>
+                            <span>{isCopied ? '✓' : '📋'}</span>
+                            <span>{isCopied ? 'CSS Copied!' : 'Copy as CSS'}</span>
                           </button>
 
-                          {/* 2. Copy SVG to Clipboard */}
-                          <button
-                            onClick={() => handleCopySvg(cluster)}
-                            title="Copy clean SVG code to clipboard (paste anywhere or Cmd+V into Figma)"
-                            className={`text-[10px] font-medium px-2 py-0.5 rounded border transition-all ${
-                              copiedSvgId === cluster.clusterId
-                                ? 'bg-emerald-50 border-emerald-300 text-emerald-700 font-bold'
-                                : 'bg-white hover:bg-gray-50 border-gray-300 text-gray-700'
-                            }`}
-                          >
-                            <span>{copiedSvgId === cluster.clusterId ? '✓ SVG Copied' : 'Copy SVG'}</span>
-                          </button>
-
-                          {/* 3. Copy CSS Styles */}
-                          <button
-                            onClick={() => handleCopyCss(cluster)}
-                            title="Copy CSS style rules to clipboard"
-                            className={`text-[10px] font-medium px-2 py-0.5 rounded border transition-all ${
-                              copiedCssId === cluster.clusterId
-                                ? 'bg-emerald-50 border-emerald-300 text-emerald-700 font-bold'
-                                : 'bg-white hover:bg-gray-50 border-gray-300 text-gray-700'
-                            }`}
-                          >
-                            <span>{copiedCssId === cluster.clusterId ? '✓ CSS Copied' : 'Copy CSS'}</span>
-                          </button>
-
-                          {/* 4. Locate on Figma Canvas */}
+                          {/* Locate on Figma Canvas */}
                           <button
                             onClick={() => onSelectNode(cluster.representativeNodeId)}
                             title="Locate and zoom into component on Figma canvas"
-                            className="text-[10px] text-gray-600 hover:text-blue-600 font-medium px-1.5 py-0.5 rounded border border-gray-200 hover:border-blue-300 bg-white"
+                            className="text-[10px] text-gray-600 hover:text-blue-600 font-medium px-2 py-1 rounded border border-gray-200 hover:border-blue-300 bg-white"
                           >
                             <span>🔍 Locate</span>
                           </button>
@@ -342,8 +320,8 @@ export const ComponentInventoryTab: React.FC<Props> = ({
                       <div className="flex items-start space-x-3">
                         {/* Visual SVG Thumbnail */}
                         <div
-                          onClick={() => handleCopyCanvas(cluster)}
-                          title="Click to copy component to Figma canvas"
+                          onClick={() => handleCopyCss(cluster)}
+                          title="Click to Copy as CSS"
                           className="w-20 h-16 bg-gray-50 border border-gray-200 rounded-md p-1.5 flex items-center justify-center flex-shrink-0 cursor-pointer hover:border-blue-400 group relative transition-colors"
                         >
                           {cluster.svgPreview ? (
@@ -355,7 +333,7 @@ export const ComponentInventoryTab: React.FC<Props> = ({
                             <div className="w-8 h-8 rounded bg-gray-200 animate-pulse" />
                           )}
                           <span className="absolute inset-0 bg-blue-600/10 opacity-0 group-hover:opacity-100 rounded-md flex items-center justify-center text-[9px] font-bold text-blue-700 transition-opacity">
-                            + Copy
+                            Copy CSS
                           </span>
                         </div>
 
@@ -472,20 +450,9 @@ export const ComponentInventoryTab: React.FC<Props> = ({
                                     R: {inst.properties.cornerRadius}
                                   </span>
                                   <button
-                                    onClick={() => {
-                                      onCopyNode(inst.nodeId);
-                                      setCopiedInstanceId(inst.nodeId);
-                                      setTimeout(() => setCopiedInstanceId(null), 1500);
-                                    }}
-                                    title="Copy this clone to current canvas"
-                                    className="text-[10px] text-blue-600 hover:text-blue-800 font-medium px-1.5 py-0.5 rounded border border-blue-200 bg-white hover:bg-blue-50 flex items-center space-x-0.5"
-                                  >
-                                    <span>{copiedInstanceId === inst.nodeId ? '✓ Copied' : '📋 Copy'}</span>
-                                  </button>
-                                  <button
                                     onClick={() => onSelectNode(inst.nodeId)}
                                     title="Locate exact instance on canvas"
-                                    className="text-[10px] text-gray-600 hover:text-gray-900 font-medium px-1.5 py-0.5 rounded border border-gray-200 bg-white hover:bg-gray-50"
+                                    className="text-[10px] text-blue-600 hover:text-blue-800 underline font-medium ml-1"
                                   >
                                     Locate
                                   </button>
